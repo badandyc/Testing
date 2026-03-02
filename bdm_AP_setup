@@ -21,8 +21,17 @@ echo "=== Enable systemd-networkd ==="
 systemctl enable systemd-networkd
 systemctl start systemd-networkd
 
-echo "=== Configure persistent static IP (systemd-networkd) ==="
+echo "=== Configure eth0 (DHCP for LAN access) ==="
 mkdir -p /etc/systemd/network
+cat > /etc/systemd/network/eth0.network <<EOF
+[Match]
+Name=eth0
+
+[Network]
+DHCP=yes
+EOF
+
+echo "=== Configure wlan0 (Static AP IP) ==="
 cat > /etc/systemd/network/wlan0.network <<EOF
 [Match]
 Name=wlan0
@@ -80,4 +89,9 @@ systemctl restart hostapd
 systemctl restart dnsmasq
 
 echo "=== DONE ==="
+echo "LAN (eth0) → DHCP"
+echo "AP (wlan0) → 10.10.10.1"
+#echo "SSID: BirdDog"
+#echo "Password: StrongPass123"
+#echo "Reboot once to confirm persistence."
 reboot
