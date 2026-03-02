@@ -10,7 +10,7 @@ echo "=== Installing nginx ==="
 apt update
 apt install -y nginx
 
-echo "=== Configuring nginx (AP-only + WebRTC proxy) ==="
+echo "=== Configuring nginx (AP-only) ==="
 
 cat > /etc/nginx/sites-available/default <<EOF
 server {
@@ -23,17 +23,6 @@ server {
     location / {
         try_files \$uri \$uri/ =404;
     }
-
-    location /webrtc/ {
-        proxy_pass http://127.0.0.1:8889/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8888/v2/;
-    }
 }
 EOF
 
@@ -44,20 +33,27 @@ cat > /var/www/html/index.html <<'EOF'
 <html>
 <head>
 <meta charset="utf-8">
-<title>BirdDog Grid</title>
+<title>BirdDog Dashboard</title>
 <style>
 body { margin:0; background:#111; color:white; font-family:sans-serif; }
 #controls { padding:10px; background:#222; }
 button { padding:6px 12px; }
 .grid {
   display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap:2px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap:8px;
+  padding:10px;
 }
-iframe {
-  width:100%;
-  height:300px;
-  border:none;
+.tile {
+  background:#222;
+  padding:20px;
+  text-align:center;
+  border-radius:6px;
+}
+a {
+  color:#4da3ff;
+  text-decoration:none;
+  font-size:18px;
 }
 </style>
 </head>
@@ -75,7 +71,7 @@ async function loadStreams() {
   grid.innerHTML = "";
 
   try {
-    const response = await fetch("/api/paths/list");
+    const response = await fetch("http://10.10.10.1:8888/v2/paths/list");
     const data = await response.json();
 
     if (!data.items || data.items.length === 0) {
@@ -85,9 +81,16 @@ async function loadStreams() {
 
     data.items.forEach(path => {
       if (path.name) {
-        const iframe = document.createElement("iframe");
-        iframe.src = `/webrtc/${path.name}`;
-        grid.appendChild(iframe);
+        const tile = document.createElement("div");
+        tile.className = "tile";
+
+        const link = document.createElement("a");
+        link.href = `http://10.10.10.1:8889/${path.name}`;
+        link.target = "_blank";
+        link.innerText = path.name;
+
+        tile.appendChild(link);
+        grid.appendChild(tile);
       }
     });
 
