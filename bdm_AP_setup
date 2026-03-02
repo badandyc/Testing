@@ -9,17 +9,22 @@ fi
 echo "=== Unblocking WiFi ==="
 rfkill unblock wifi || true
 
-echo "=== Installing packages ==="
+echo "=== Installing required packages ==="
 apt update
-apt install -y hostapd dnsmasq systemd-networkd
+apt install -y hostapd dnsmasq
 
-echo "=== Disable NetworkManager (we will use systemd-networkd) ==="
+echo "=== Disable NetworkManager (appliance mode) ==="
 systemctl stop NetworkManager || true
 systemctl disable NetworkManager || true
 
 echo "=== Enable systemd-networkd ==="
 systemctl enable systemd-networkd
 systemctl start systemd-networkd
+
+echo "=== Enable systemd-resolved for DNS ==="
+systemctl enable systemd-resolved
+systemctl start systemd-resolved
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
 echo "=== Configure persistent static IP (systemd-networkd) ==="
 mkdir -p /etc/systemd/network
@@ -74,7 +79,7 @@ EOF
 
 systemctl daemon-reload
 
-echo "=== Starting services ==="
+echo "=== Restarting services ==="
 systemctl restart systemd-networkd
 systemctl restart hostapd
 systemctl restart dnsmasq
