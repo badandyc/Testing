@@ -107,10 +107,17 @@ rpicam-vid -t 0 --nopreview \
 -o \$PIPE &
 RPICAM_PID=\$!
 
-ffmpeg -loglevel error -use_wallclock_as_timestamps 1 \
--f h264 -i \$PIPE -c copy \
--f rtsp rtsp://\$BDM_HOST:8554/\$STREAM_NAME &
-FFMPEG_PID=\$!
+ffmpeg -use_wallclock_as_timestamps 1 \
+-f h264 -i $PIPE \
+-c:v copy \
+-fflags +genpts \
+-rtsp_transport tcp \
+-f rtsp rtsp://bdm-01.local:8554/$STREAM_NAME
+
+#ffmpeg -loglevel error -use_wallclock_as_timestamps 1 \
+#-f h264 -i \$PIPE -c copy \
+#-f rtsp rtsp://\$BDM_HOST:8554/\$STREAM_NAME &
+#FFMPEG_PID=\$!
 
 wait \$FFMPEG_PID
 EOF
