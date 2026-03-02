@@ -2,23 +2,58 @@
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root (sudo ./bdc_fresh_install_setup.sh <stream_name>)"
+    echo "Run as root: sudo bash bdc_fresh_install_setup.sh"
     exit 1
 fi
 
-STREAM_NAME=${1:-cam1}
-BDM_HOST="bdm-01"
-
 echo "=== BirdDog BDC Installer ==="
-echo "Stream name: $STREAM_NAME"
-echo "BDM host: $BDM_HOST"
 
+# --- Disable cloud-init if present ---
+if [ -d /etc/cloud ]; then
+    echo "Disabling cloud-init..."
+    touch /etc/cloud/cloud-init.disabled
+fi
+
+# --- Prompt for hostname ---
+read -p "Enter hostname (e.g. bdc-01): " NEW_HOSTNAME
+
+if [[ -z "$NEW_HOSTNAME" ]]; then
+    echo "Hostname cannot be empty."
+    exit 1
+fi
+
+# --- Extract numeric suffix ---
+NODE_NUM=$(echo "$NEW_HOSTNAME" | grep -oE '[0-9]+$')
+
+if [[ -z "$NODE_NUM" ]]; then
+    echo "Hostname must end in a number (e.g. bdc-01)"
+    exit 1
+fi
+
+STREAM_NAME="cam$(printf "%02d" "$NODE_NUM")"
+
+echo "Hostname: $NEW_HOSTNAME"
+echo "Stream name: $STREAM_NAME"
+
+# --- Set hostname deterministically ---
+echo "$NEW_HOSTNAME" > /etc/hostname
+if grep -q "^127.0.1.1" /etc/hosts; then
+    sed -i "s/^127.0.1.1.*/127.0.1.1    $NEW_HOSTNAME/" /etc/hosts
+else
+    echo "127.0.1.1    $NEW_HOSTNAME" >> /etc/hosts
+fi
+hostname "$NEW_HOSTNAME"
+
+# --- System Update ---
 echo "Updating system..."
 apt update
 apt upgrade -y
 
+# --- Required Packages ---
 echo "Installing packages..."
 apt install -y ffmpeg rpicam-apps
+
+BDM_HOST="bdm-01"
 
 echo "Installing stream script..."
 
@@ -81,4 +116,6 @@ systemctl daemon-reload
 systemctl enable birddog-stream.service
 
 echo "=== Installation Complete ==="
+echo "Rebooting in 5 seconds..."
+sleep 5
 reboot
