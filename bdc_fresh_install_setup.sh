@@ -81,4 +81,4 @@ systemctl daemon-reload
 systemctl enable birddog-stream.service
 
 echo "=== Installation Complete ==="
-echo "Reboot recommended."
+reboot
