@@ -80,6 +80,4 @@ systemctl restart hostapd
 systemctl restart dnsmasq
 
 echo "=== DONE ==="
-echo "SSID: BirdDog"
-echo "Password: StrongPass123"
-echo "Reboot once to confirm persistence."
+reboot
