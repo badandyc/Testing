@@ -1,0 +1,63 @@
+#!/bin/bash
+set -e
+
+echo "=== Installing packages ==="
+apt update
+apt install -y hostapd dnsmasq
+
+echo "=== Disable NetworkManager control of wlan0 ==="
+nmcli device set wlan0 managed no || true
+
+echo "=== Configure static IP ==="
+ip link set wlan0 down || true
+ip addr flush dev wlan0 || true
+ip addr add 10.10.10.1/24 dev wlan0
+ip link set wlan0 up
+
+echo "=== Configure hostapd ==="
+cat > /etc/hostapd/hostapd.conf <<EOF
+interface=wlan0
+driver=nl80211
+ssid=BirdDog
+hw_mode=g
+channel=6
+wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_passphrase=StrongPass123
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+EOF
+
+sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
+
+systemctl unmask hostapd
+systemctl enable hostapd
+
+echo "=== Configure dnsmasq ==="
+mv /etc/dnsmasq.conf /etc/dnsmasq.conf.bak || true
+
+cat > /etc/dnsmasq.conf <<EOF
+interface=wlan0
+bind-dynamic
+dhcp-range=10.10.10.50,10.10.10.150,255.255.255.0,24h
+EOF
+
+systemctl enable dnsmasq
+
+echo "=== Ensure WiFi unblocked on boot ==="
+mkdir -p /etc/systemd/system/hostapd.service.d
+cat > /etc/systemd/system/hostapd.service.d/rfkill.conf <<EOF
+[Service]
+ExecStartPre=/usr/sbin/rfkill unblock wifi
+EOF
+
+systemctl daemon-reload
+
+echo "=== Restart services ==="
+systemctl restart hostapd
+systemctl restart dnsmasq
+
+echo "=== DONE ==="
+echo "SSID: BirdDog"
+echo "Password: StrongPass123"
