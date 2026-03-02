@@ -14,11 +14,15 @@ if [[ -z "$NEW_HOSTNAME" ]]; then
   exit 1
 fi
 
+echo "=== Updating /etc/hosts first ==="
+if grep -q "127.0.1.1" /etc/hosts; then
+  sed -i "s/^127.0.1.1.*/127.0.1.1    $NEW_HOSTNAME/" /etc/hosts
+else
+  echo "127.0.1.1    $NEW_HOSTNAME" >> /etc/hosts
+fi
+
 echo "=== Setting hostname ==="
 hostnamectl set-hostname "$NEW_HOSTNAME"
-
-# Update /etc/hosts safely
-sed -i "s/127.0.1.1.*/127.0.1.1    $NEW_HOSTNAME/" /etc/hosts
 
 echo "=== Updating system ==="
 apt update
@@ -26,5 +30,4 @@ apt full-upgrade -y
 apt autoremove -y
 
 echo "=== Bootstrap complete. Rebooting... ==="
-sleep 2
 reboot
