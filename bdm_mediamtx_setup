@@ -6,25 +6,35 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-VERSION="v1.8.4"   # update if needed
 INSTALL_DIR="/opt/mediamtx"
 
 echo "=== Creating mediamtx user ==="
 id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
 
-echo "=== Downloading MediaMTX ==="
-rm -rf $INSTALL_DIR
-mkdir -p $INSTALL_DIR
+echo "=== Downloading latest MediaMTX (auto-detect) ==="
 cd /tmp
 
-curl -L -o mediamtx.tar.gz \
-https://github.com/bluenviron/mediamtx/releases/download/${VERSION}/mediamtx_${VERSION}_linux_arm64.tar.gz
+LATEST_URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
+  | grep browser_download_url \
+  | grep linux_arm64.tar.gz \
+  | cut -d '"' -f 4)
+
+if [ -z "$LATEST_URL" ]; then
+  echo "Failed to determine latest MediaMTX release URL"
+  exit 1
+fi
+
+curl -L -o mediamtx.tar.gz "$LATEST_URL"
+
+echo "=== Installing MediaMTX ==="
+rm -rf "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
 
 tar -xzf mediamtx.tar.gz
-mv mediamtx $INSTALL_DIR/
-mv mediamtx.yml $INSTALL_DIR/
+mv mediamtx "$INSTALL_DIR/"
+mv mediamtx.yml "$INSTALL_DIR/"
 
-chown -R mediamtx:mediamtx $INSTALL_DIR
+chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
 echo "=== Creating systemd service ==="
 cat > /etc/systemd/system/mediamtx.service <<EOF
@@ -44,7 +54,7 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-echo "=== Enabling service ==="
+echo "=== Enabling and starting service ==="
 systemctl daemon-reload
 systemctl enable mediamtx
 systemctl start mediamtx
