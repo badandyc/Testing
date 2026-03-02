@@ -59,7 +59,7 @@ hostname "$NEW_HOSTNAME"
 
 echo "Updating system..."
 apt update
-apt upgrade -y
+#apt upgrade -y
 
 echo "Installing packages..."
 apt install -y ffmpeg rpicam-apps avahi-daemon
