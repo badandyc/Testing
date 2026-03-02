@@ -8,13 +8,13 @@ fi
 
 echo "=== BirdDog BDC Installer ==="
 
-# --- Disable cloud-init if present ---
+# Disable cloud-init if present
 if [ -d /etc/cloud ]; then
     echo "Disabling cloud-init..."
     touch /etc/cloud/cloud-init.disabled
 fi
 
-# --- Prompt for hostname ---
+# Prompt for hostname
 read -p "Enter hostname (e.g. bdc-01): " NEW_HOSTNAME
 
 if [[ -z "$NEW_HOSTNAME" ]]; then
@@ -22,7 +22,7 @@ if [[ -z "$NEW_HOSTNAME" ]]; then
     exit 1
 fi
 
-# --- Extract numeric suffix ---
+# Extract numeric suffix
 NODE_NUM=$(echo "$NEW_HOSTNAME" | grep -oE '[0-9]+$')
 
 if [[ -z "$NODE_NUM" ]]; then
@@ -35,7 +35,7 @@ STREAM_NAME="cam$(printf "%02d" "$NODE_NUM")"
 echo "Hostname: $NEW_HOSTNAME"
 echo "Stream name: $STREAM_NAME"
 
-# --- Set hostname deterministically ---
+# Set hostname deterministically
 echo "$NEW_HOSTNAME" > /etc/hostname
 if grep -q "^127.0.1.1" /etc/hosts; then
     sed -i "s/^127.0.1.1.*/127.0.1.1    $NEW_HOSTNAME/" /etc/hosts
@@ -44,16 +44,18 @@ else
 fi
 hostname "$NEW_HOSTNAME"
 
-# --- System Update ---
 echo "Updating system..."
 apt update
 apt upgrade -y
 
-# --- Required Packages ---
 echo "Installing packages..."
-apt install -y ffmpeg rpicam-apps
+apt install -y ffmpeg rpicam-apps avahi-daemon
 
-BDM_HOST="bdm-01"
+echo "Enabling Avahi..."
+systemctl enable avahi-daemon
+systemctl start avahi-daemon
+
+BDM_HOST="bdm-01.local"
 
 echo "Installing stream script..."
 
@@ -85,7 +87,7 @@ rpicam-vid -t 0 --nopreview \
 -o \$PIPE &
 RPICAM_PID=\$!
 
-ffmpeg -use_wallclock_as_timestamps 1 \
+ffmpeg -loglevel error -use_wallclock_as_timestamps 1 \
 -f h264 -i \$PIPE -c copy \
 -f rtsp rtsp://\$BDM_HOST:8554/\$STREAM_NAME &
 FFMPEG_PID=\$!
