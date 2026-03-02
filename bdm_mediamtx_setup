@@ -61,3 +61,4 @@ systemctl start mediamtx
 
 echo "=== DONE ==="
 systemctl status mediamtx --no-pager
+reboot
