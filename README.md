@@ -14,6 +14,11 @@ rm -f bdm_mediamtx_setup && \
 curl -fsSL https://raw.githubusercontent.com/badandyc/Testing/master/bdm_mediamtx_setup -o bdm_mediamtx_setup && \
 sudo bash bdm_mediamtx_setup
 
+Step 4: Install Nginx
+rm -f bdm_web_setup.sh && \
+curl -fsSL https://raw.githubusercontent.com/badandyc/Testing/master/bdm_web_setup.sh -o bdm_web_setup.sh && \
+sudo bash bdm_web_setup.sh
+
 BDC
 Step 1: Bootstrap
 rm -f bdc_fresh_install_setup.sh && \
