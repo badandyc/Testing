@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Run as root: sudo bash bdm_mediamtx_setup"
+  exit 1
+fi
+
+VERSION="v1.8.4"   # update if needed
+INSTALL_DIR="/opt/mediamtx"
+
+echo "=== Creating mediamtx user ==="
+id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
+
+echo "=== Downloading MediaMTX ==="
+rm -rf $INSTALL_DIR
+mkdir -p $INSTALL_DIR
+cd /tmp
+
+curl -L -o mediamtx.tar.gz \
+https://github.com/bluenviron/mediamtx/releases/download/${VERSION}/mediamtx_${VERSION}_linux_arm64.tar.gz
+
+tar -xzf mediamtx.tar.gz
+mv mediamtx $INSTALL_DIR/
+mv mediamtx.yml $INSTALL_DIR/
+
+chown -R mediamtx:mediamtx $INSTALL_DIR
+
+echo "=== Creating systemd service ==="
+cat > /etc/systemd/system/mediamtx.service <<EOF
+[Unit]
+Description=MediaMTX Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mediamtx
+Group=mediamtx
+ExecStart=$INSTALL_DIR/mediamtx $INSTALL_DIR/mediamtx.yml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "=== Enabling service ==="
+systemctl daemon-reload
+systemctl enable mediamtx
+systemctl start mediamtx
+
+echo "=== DONE ==="
+systemctl status mediamtx --no-pager
