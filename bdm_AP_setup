@@ -21,11 +21,6 @@ echo "=== Enable systemd-networkd ==="
 systemctl enable systemd-networkd
 systemctl start systemd-networkd
 
-echo "=== Enable systemd-resolved for DNS ==="
-systemctl enable systemd-resolved
-systemctl start systemd-resolved
-ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-
 echo "=== Configure persistent static IP (systemd-networkd) ==="
 mkdir -p /etc/systemd/network
 cat > /etc/systemd/network/wlan0.network <<EOF
