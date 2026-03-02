@@ -11,16 +11,25 @@ rfkill unblock wifi || true
 
 echo "=== Installing packages ==="
 apt update
-apt install -y hostapd dnsmasq
+apt install -y hostapd dnsmasq systemd-networkd
 
-echo "=== Disable NetworkManager control of wlan0 ==="
-nmcli device set wlan0 managed no || true
+echo "=== Disable NetworkManager (we will use systemd-networkd) ==="
+systemctl stop NetworkManager || true
+systemctl disable NetworkManager || true
 
-echo "=== Configure static IP ==="
-ip link set wlan0 down || true
-ip addr flush dev wlan0 || true
-ip addr add 10.10.10.1/24 dev wlan0
-ip link set wlan0 up
+echo "=== Enable systemd-networkd ==="
+systemctl enable systemd-networkd
+systemctl start systemd-networkd
+
+echo "=== Configure persistent static IP (systemd-networkd) ==="
+mkdir -p /etc/systemd/network
+cat > /etc/systemd/network/wlan0.network <<EOF
+[Match]
+Name=wlan0
+
+[Network]
+Address=10.10.10.1/24
+EOF
 
 echo "=== Configure hostapd ==="
 cat > /etc/hostapd/hostapd.conf <<EOF
@@ -37,8 +46,11 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF
 
-sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd || \
-echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >> /etc/default/hostapd
+if grep -q "^DAEMON_CONF=" /etc/default/hostapd; then
+  sed -i 's|^DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
+else
+  echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >> /etc/default/hostapd
+fi
 
 systemctl unmask hostapd || true
 systemctl enable hostapd
@@ -63,9 +75,11 @@ EOF
 systemctl daemon-reload
 
 echo "=== Starting services ==="
+systemctl restart systemd-networkd
 systemctl restart hostapd
 systemctl restart dnsmasq
 
 echo "=== DONE ==="
 echo "SSID: BirdDog"
 echo "Password: StrongPass123"
+echo "Reboot once to confirm persistence."
