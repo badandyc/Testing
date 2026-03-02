@@ -102,10 +102,13 @@ echo "Installing systemd service..."
 cat <<EOF > /etc/systemd/system/birddog-stream.service
 [Unit]
 Description=BirdDog Camera Stream
-After=network-online.target
+After=network-online.target avahi-daemon.service
 Wants=network-online.target
+Requires=avahi-daemon.service
 
 [Service]
+Type=simple
+ExecStartPre=/bin/bash -c 'until getent hosts bdm-01.local; do sleep 1; done'
 ExecStart=/usr/local/bin/birddog-stream.sh
 Restart=always
 RestartSec=5
