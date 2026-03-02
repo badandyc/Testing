@@ -10,7 +10,7 @@ echo "=== Installing nginx ==="
 apt update
 apt install -y nginx
 
-echo "=== Configuring nginx to bind only to AP (10.10.10.1) ==="
+echo "=== Configuring nginx (AP-only + WebRTC proxy) ==="
 
 cat > /etc/nginx/sites-available/default <<EOF
 server {
@@ -22,6 +22,17 @@ server {
 
     location / {
         try_files \$uri \$uri/ =404;
+    }
+
+    location /webrtc/ {
+        proxy_pass http://127.0.0.1:8889/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8888/v2/;
     }
 }
 EOF
@@ -64,7 +75,7 @@ async function loadStreams() {
   grid.innerHTML = "";
 
   try {
-    const response = await fetch("http://10.10.10.1:8888/v2/paths/list");
+    const response = await fetch("/api/paths/list");
     const data = await response.json();
 
     if (!data.items || data.items.length === 0) {
@@ -75,7 +86,7 @@ async function loadStreams() {
     data.items.forEach(path => {
       if (path.name) {
         const iframe = document.createElement("iframe");
-        iframe.src = `http://10.10.10.1:8889/${path.name}`;
+        iframe.src = `/webrtc/${path.name}`;
         grid.appendChild(iframe);
       }
     });
