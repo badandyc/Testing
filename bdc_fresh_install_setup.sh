@@ -14,15 +14,32 @@ if [ -d /etc/cloud ]; then
     touch /etc/cloud/cloud-init.disabled
 fi
 
-# Prompt for BDC hostname
-read -p "Enter BDC hostname (e.g. bdc-01): " NEW_HOSTNAME
+# Install required packages early so avahi tools exist for hostname check
+echo "Updating system..."
+apt update
+apt install -y ffmpeg rpicam-apps avahi-daemon
 
-if [[ -z "$NEW_HOSTNAME" ]]; then
-    echo "Hostname cannot be empty."
-    exit 1
-fi
+systemctl enable avahi-daemon
+systemctl start avahi-daemon
 
-# Extract numeric suffix for stream name
+# --- Hostname selection loop with uniqueness enforcement ---
+while true; do
+    read -p "Enter BDC hostname (e.g. bdc-01): " NEW_HOSTNAME
+
+    if [[ -z "$NEW_HOSTNAME" ]]; then
+        echo "Hostname cannot be empty."
+        continue
+    fi
+
+    if avahi-resolve-host-name "$NEW_HOSTNAME.local" >/dev/null 2>&1; then
+        echo "Hostname already exists on network. Choose another."
+        continue
+    fi
+
+    break
+done
+
+# Extract numeric suffix
 NODE_NUM=$(echo "$NEW_HOSTNAME" | grep -oE '[0-9]+$')
 
 if [[ -z "$NODE_NUM" ]]; then
@@ -57,16 +74,8 @@ fi
 
 hostname "$NEW_HOSTNAME"
 
-echo "Updating system..."
-apt update
-#apt upgrade -y
-
-echo "Installing packages..."
-apt install -y ffmpeg rpicam-apps avahi-daemon
-
-echo "Enabling Avahi..."
-systemctl enable avahi-daemon
-systemctl start avahi-daemon
+# Restart avahi so it advertises new hostname cleanly
+systemctl restart avahi-daemon
 
 echo "Installing stream script..."
 
