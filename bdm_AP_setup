@@ -89,9 +89,8 @@ systemctl restart hostapd
 systemctl restart dnsmasq
 
 echo "=== DONE ==="
+echo "Rebooting in 5 seconds to validate persistence..."
 echo "LAN (eth0) → DHCP"
 echo "AP (wlan0) → 10.10.10.1"
-#echo "SSID: BirdDog"
-#echo "Password: StrongPass123"
-#echo "Reboot once to confirm persistence."
+sleep 5
 reboot
