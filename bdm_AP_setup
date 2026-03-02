@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+if [ "$EUID" -ne 0 ]; then
+  echo "Run as root: sudo bash bdm_AP_setup"
+  exit 1
+fi
+
+echo "=== Unblocking WiFi ==="
+rfkill unblock wifi || true
+
 echo "=== Installing packages ==="
 apt update
 apt install -y hostapd dnsmasq
@@ -29,14 +37,14 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF
 
-sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
+sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd || \
+echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >> /etc/default/hostapd
 
-systemctl unmask hostapd
+systemctl unmask hostapd || true
 systemctl enable hostapd
 
 echo "=== Configure dnsmasq ==="
-mv /etc/dnsmasq.conf /etc/dnsmasq.conf.bak || true
-
+rm -f /etc/dnsmasq.conf
 cat > /etc/dnsmasq.conf <<EOF
 interface=wlan0
 bind-dynamic
@@ -54,7 +62,7 @@ EOF
 
 systemctl daemon-reload
 
-echo "=== Restart services ==="
+echo "=== Starting services ==="
 systemctl restart hostapd
 systemctl restart dnsmasq
 
