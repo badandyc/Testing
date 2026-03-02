@@ -2,44 +2,54 @@
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-  echo "Run as root: sudo bash bd-bootstrap.sh"
+  echo "Run as root: sudo bash bdm_initial_setup"
   exit 1
 fi
 
-echo "=== BirdDog Bootstrap ==="
+echo "=== BirdDog BDM Bootstrap ==="
 
-# Disable cloud-init if present (prevents hostname reset on reboot)
+# Disable cloud-init if present
 if [ -d /etc/cloud ]; then
   echo "Disabling cloud-init..."
   touch /etc/cloud/cloud-init.disabled
 fi
 
-read -p "Enter new hostname (e.g. bdc-01 or bdm-01): " NEW_HOSTNAME
+# Prompt for hostname
+read -p "Enter new hostname (e.g. bdm-master): " NEW_HOSTNAME
 
 if [[ -z "$NEW_HOSTNAME" ]]; then
   echo "Hostname cannot be empty."
   exit 1
 fi
 
-echo "=== Writing hostname deterministically ==="
+echo "Setting hostname to $NEW_HOSTNAME"
 
-# Write hostname directly
 echo "$NEW_HOSTNAME" > /etc/hostname
 
-# Update /etc/hosts safely
 if grep -q "^127.0.1.1" /etc/hosts; then
   sed -i "s/^127.0.1.1.*/127.0.1.1    $NEW_HOSTNAME/" /etc/hosts
 else
   echo "127.0.1.1    $NEW_HOSTNAME" >> /etc/hosts
 fi
 
-# Apply immediately
 hostname "$NEW_HOSTNAME"
 
-echo "=== Updating system ==="
+echo "Installing Avahi..."
 apt update
+apt install -y avahi-daemon
+
+# Clear any previous Avahi state
+rm -rf /var/lib/avahi-daemon/* || true
+
+systemctl enable avahi-daemon
+systemctl restart avahi-daemon
+
+echo "Updating system..."
 apt full-upgrade -y
 apt autoremove -y
 
-echo "=== Bootstrap complete. Rebooting... ==="
+echo "=== Bootstrap complete ==="
+echo "Hostname: $NEW_HOSTNAME"
+echo "Rebooting in 5 seconds..."
+sleep 5
 reboot
