@@ -45,8 +45,8 @@ systemctl enable avahi-daemon
 systemctl restart avahi-daemon
 
 echo "Updating system..."
-apt full-upgrade -y
-apt autoremove -y
+#apt full-upgrade -y
+#apt autoremove -y
 
 echo "=== Bootstrap complete ==="
 echo "Hostname: $NEW_HOSTNAME"
