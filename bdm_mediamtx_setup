@@ -34,9 +34,27 @@ tar -xzf mediamtx.tar.gz
 mv mediamtx "$INSTALL_DIR/"
 mv mediamtx.yml "$INSTALL_DIR/"
 
+echo "=== Configuring MediaMTX ==="
+
+# Ensure RTSP listens on all interfaces
+sed -i 's/^rtspAddress:.*/rtspAddress: :8554/' "$INSTALL_DIR/mediamtx.yml"
+
+# Enable Control API
+sed -i 's/^api:.*/api: true/' "$INSTALL_DIR/mediamtx.yml"
+
+# Ensure API address
+sed -i 's|^apiAddress:.*|apiAddress: :9997|' "$INSTALL_DIR/mediamtx.yml"
+
+# Allow CORS from anywhere (internal appliance use)
+sed -i "s|^apiAllowOrigins:.*|apiAllowOrigins: ['*']|" "$INSTALL_DIR/mediamtx.yml"
+
+# Remove localhost-only API restriction
+sed -i "/- action: api/,/pprof/ s/ips: .*/ips: []/" "$INSTALL_DIR/mediamtx.yml"
+
 chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
 echo "=== Creating systemd service ==="
+
 cat > /etc/systemd/system/mediamtx.service <<EOF
 [Unit]
 Description=MediaMTX Server
@@ -49,6 +67,7 @@ Group=mediamtx
 ExecStart=$INSTALL_DIR/mediamtx $INSTALL_DIR/mediamtx.yml
 Restart=always
 RestartSec=5
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -57,8 +76,7 @@ EOF
 echo "=== Enabling and starting service ==="
 systemctl daemon-reload
 systemctl enable mediamtx
-systemctl start mediamtx
+systemctl restart mediamtx
 
 echo "=== DONE ==="
 systemctl status mediamtx --no-pager
-reboot
