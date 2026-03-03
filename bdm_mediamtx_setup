@@ -34,22 +34,20 @@ tar -xzf mediamtx.tar.gz
 mv mediamtx "$INSTALL_DIR/"
 mv mediamtx.yml "$INSTALL_DIR/"
 
-echo "=== Configuring MediaMTX ==="
+echo "=== Writing clean MediaMTX configuration ==="
 
-# Ensure RTSP listens on all interfaces
-sed -i 's/^rtspAddress:.*/rtspAddress: :8554/' "$INSTALL_DIR/mediamtx.yml"
+cat > "$INSTALL_DIR/mediamtx.yml" <<EOF
+rtspAddress: :8554
 
-# Enable Control API
-sed -i 's/^api:.*/api: true/' "$INSTALL_DIR/mediamtx.yml"
+api: true
+apiAddress: :9997
+apiAllowOrigins: ['*']
 
-# Ensure API address
-sed -i 's|^apiAddress:.*|apiAddress: :9997|' "$INSTALL_DIR/mediamtx.yml"
+authMethods: []
 
-# Allow CORS from anywhere (internal appliance use)
-sed -i "s|^apiAllowOrigins:.*|apiAllowOrigins: ['*']|" "$INSTALL_DIR/mediamtx.yml"
-
-# Remove localhost-only API restriction
-sed -i "/- action: api/,/pprof/ s/ips: .*/ips: []/" "$INSTALL_DIR/mediamtx.yml"
+webrtc: yes
+webrtcAddress: :8889
+EOF
 
 chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
