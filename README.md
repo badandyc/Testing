@@ -10,8 +10,8 @@ curl -fsSL https://raw.githubusercontent.com/badandyc/Testing/master/bdm_AP_setu
 sudo bash bdm_AP_setup
 
 Step 3: Install MediaMTX
-rm -f bdm_mediamtx_setup &&
-curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_mediamtx_setup?$(date +%s)" -o bdm_mediamtx_setup &&
+rm -f bdm_mediamtx_setup && \
+curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_mediamtx_setup?$(date +%s)" -o bdm_mediamtx_setup && \
 sudo bash bdm_mediamtx_setup
 
 Step 4: Install Nginx
