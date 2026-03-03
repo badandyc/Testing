@@ -13,6 +13,7 @@ id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
 
 echo "=== Downloading latest MediaMTX (auto-detect) ==="
 cd /tmp
+rm -rf mediamtx* 2>/dev/null || true
 
 LATEST_URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
   | grep browser_download_url \
@@ -31,23 +32,41 @@ rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
 tar -xzf mediamtx.tar.gz
-mv mediamtx "$INSTALL_DIR/"
-mv mediamtx.yml "$INSTALL_DIR/"
 
-echo "=== Writing clean MediaMTX configuration ==="
+# Detect extracted directory name dynamically
+EXTRACT_DIR=$(tar -tzf mediamtx.tar.gz | head -1 | cut -f1 -d"/")
 
-cat > "$INSTALL_DIR/mediamtx.yml" <<EOF
-rtspAddress: :8554
+if [ ! -d "$EXTRACT_DIR" ]; then
+  echo "Extraction directory not found"
+  exit 1
+fi
 
-api: true
-apiAddress: :9997
-apiAllowOrigins: ['*']
+if [ ! -f "$EXTRACT_DIR/mediamtx" ]; then
+  echo "mediamtx binary missing from archive"
+  exit 1
+fi
 
-authMethods: []
+if [ ! -f "$EXTRACT_DIR/mediamtx.yml" ]; then
+  echo "mediamtx.yml missing from archive"
+  exit 1
+fi
 
-webrtc: yes
-webrtcAddress: :8889
-EOF
+mv "$EXTRACT_DIR/mediamtx" "$INSTALL_DIR/"
+mv "$EXTRACT_DIR/mediamtx.yml" "$INSTALL_DIR/"
+rm -rf "$EXTRACT_DIR"
+
+echo "=== Configuring MediaMTX ==="
+
+# Ensure required settings explicitly
+sed -i 's/^rtspAddress:.*/rtspAddress: :8554/' "$INSTALL_DIR/mediamtx.yml" || echo "rtspAddress: :8554" >> "$INSTALL_DIR/mediamtx.yml"
+sed -i 's/^api:.*/api: true/' "$INSTALL_DIR/mediamtx.yml" || echo "api: true" >> "$INSTALL_DIR/mediamtx.yml"
+sed -i 's|^apiAddress:.*|apiAddress: :9997|' "$INSTALL_DIR/mediamtx.yml" || echo "apiAddress: :9997" >> "$INSTALL_DIR/mediamtx.yml"
+sed -i "s|^apiAllowOrigins:.*|apiAllowOrigins: ['*']|" "$INSTALL_DIR/mediamtx.yml" || echo "apiAllowOrigins: ['*']" >> "$INSTALL_DIR/mediamtx.yml"
+sed -i 's/^authMethods:.*/authMethods: []/' "$INSTALL_DIR/mediamtx.yml" || echo "authMethods: []" >> "$INSTALL_DIR/mediamtx.yml"
+
+# Ensure WebRTC enabled
+grep -q "^webrtc:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtc: yes" >> "$INSTALL_DIR/mediamtx.yml"
+grep -q "^webrtcAddress:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtcAddress: :8889" >> "$INSTALL_DIR/mediamtx.yml"
 
 chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
