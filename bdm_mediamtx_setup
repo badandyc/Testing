@@ -33,11 +33,12 @@ mkdir -p "$INSTALL_DIR"
 
 tar -xzf mediamtx.tar.gz
 
-# Proper extraction handling (versioned directory layout)
-SRC_DIR=$(find . -maxdepth 1 -type d -name "mediamtx*" | head -n 1)
-
-if [ -z "$SRC_DIR" ]; then
-  echo "Extraction directory not found"
+# Detect flat layout (current upstream behavior)
+if [ -f "./mediamtx" ] && [ -f "./mediamtx.yml" ]; then
+  mv mediamtx "$INSTALL_DIR/"
+  mv mediamtx.yml "$INSTALL_DIR/"
+else
+  echo "Extraction failed: expected files not found"
   exit 1
 fi
 
