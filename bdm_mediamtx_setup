@@ -6,18 +6,20 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+REAL_USER=${SUDO_USER:-$USER}
+USER_HOME=$(eval echo "~$REAL_USER")
+WORK_DIR="$USER_HOME/mediamtx_install"
 INSTALL_DIR="/opt/mediamtx"
-TMP_DIR="/tmp/mediamtx_install"
 
 echo "=== Creating mediamtx user ==="
 id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
 
-echo "=== Preparing temp workspace ==="
-rm -rf "$TMP_DIR"
-mkdir -p "$TMP_DIR"
-cd "$TMP_DIR"
+echo "=== Preparing workspace in $WORK_DIR ==="
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
 
-echo "=== Downloading latest MediaMTX (auto-detect) ==="
+echo "=== Downloading latest MediaMTX ==="
 LATEST_URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
   | grep browser_download_url \
   | grep linux_arm64.tar.gz \
@@ -33,28 +35,15 @@ curl -L -o mediamtx.tar.gz "$LATEST_URL"
 echo "=== Extracting archive ==="
 tar -xzf mediamtx.tar.gz
 
-echo "=== Locating extracted files ==="
-
-# Case 1: flat extraction
-if [ -f "$TMP_DIR/mediamtx" ]; then
-  SRC_DIR="$TMP_DIR"
-
-# Case 2: versioned directory extraction
+# Detect source location (flat or versioned directory)
+if [ -f "$WORK_DIR/mediamtx" ]; then
+  SRC_DIR="$WORK_DIR"
 else
-  SRC_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "mediamtx*" | head -n 1)
-  if [ -z "$SRC_DIR" ]; then
-    echo "Could not locate extracted MediaMTX directory"
-    exit 1
-  fi
+  SRC_DIR=$(find "$WORK_DIR" -maxdepth 1 -type d -name "mediamtx*" | head -n 1)
 fi
 
-if [ ! -f "$SRC_DIR/mediamtx" ]; then
-  echo "mediamtx binary not found after extraction"
-  exit 1
-fi
-
-if [ ! -f "$SRC_DIR/mediamtx.yml" ]; then
-  echo "mediamtx.yml not found after extraction"
+if [ ! -f "$SRC_DIR/mediamtx" ] || [ ! -f "$SRC_DIR/mediamtx.yml" ]; then
+  echo "Extraction failed — required files missing"
   exit 1
 fi
 
@@ -65,8 +54,9 @@ mkdir -p "$INSTALL_DIR"
 mv "$SRC_DIR/mediamtx" "$INSTALL_DIR/"
 mv "$SRC_DIR/mediamtx.yml" "$INSTALL_DIR/"
 
-echo "=== Configuring MediaMTX ==="
+chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
+echo "=== Configuring MediaMTX ==="
 sed -i 's/^rtspAddress:.*/rtspAddress: :8554/' "$INSTALL_DIR/mediamtx.yml" || echo "rtspAddress: :8554" >> "$INSTALL_DIR/mediamtx.yml"
 sed -i 's/^api:.*/api: true/' "$INSTALL_DIR/mediamtx.yml" || echo "api: true" >> "$INSTALL_DIR/mediamtx.yml"
 sed -i 's|^apiAddress:.*|apiAddress: :9997|' "$INSTALL_DIR/mediamtx.yml" || echo "apiAddress: :9997" >> "$INSTALL_DIR/mediamtx.yml"
@@ -76,10 +66,7 @@ sed -i 's/^authMethods:.*/authMethods: []/' "$INSTALL_DIR/mediamtx.yml" || echo 
 grep -q "^webrtc:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtc: yes" >> "$INSTALL_DIR/mediamtx.yml"
 grep -q "^webrtcAddress:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtcAddress: :8889" >> "$INSTALL_DIR/mediamtx.yml"
 
-chown -R mediamtx:mediamtx "$INSTALL_DIR"
-
 echo "=== Creating systemd service ==="
-
 cat > /etc/systemd/system/mediamtx.service <<EOF
 [Unit]
 Description=MediaMTX Server
@@ -98,7 +85,6 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-echo "=== Enabling and starting service ==="
 systemctl daemon-reload
 systemctl enable mediamtx
 systemctl restart mediamtx
