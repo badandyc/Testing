@@ -13,8 +13,7 @@ id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
 
 echo "=== Preparing /tmp workspace ==="
 cd /tmp
-rm -f mediamtx.tar.gz
-rm -f mediamtx mediamtx.yml LICENSE
+rm -f mediamtx.tar.gz mediamtx mediamtx.yml LICENSE
 
 echo "=== Downloading latest MediaMTX (auto-detect) ==="
 LATEST_URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
@@ -32,8 +31,8 @@ curl -L -o mediamtx.tar.gz "$LATEST_URL"
 echo "=== Extracting archive ==="
 tar -xzf mediamtx.tar.gz
 
-if [ ! -f "mediamtx" ] || [ ! -f "mediamtx.yml" ]; then
-  echo "Extraction failed: required files missing"
+if [ ! -f "mediamtx" ]; then
+  echo "Extraction failed: mediamtx binary missing"
   exit 1
 fi
 
@@ -42,18 +41,68 @@ rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
 mv mediamtx "$INSTALL_DIR/"
-mv mediamtx.yml "$INSTALL_DIR/"
 
-echo "=== Configuring MediaMTX ==="
+echo "=== Writing deterministic configuration ==="
 
-sed -i 's/^rtspAddress:.*/rtspAddress: :8554/' "$INSTALL_DIR/mediamtx.yml" || echo "rtspAddress: :8554" >> "$INSTALL_DIR/mediamtx.yml"
-sed -i 's/^api:.*/api: true/' "$INSTALL_DIR/mediamtx.yml" || echo "api: true" >> "$INSTALL_DIR/mediamtx.yml"
-sed -i 's|^apiAddress:.*|apiAddress: :9997|' "$INSTALL_DIR/mediamtx.yml" || echo "apiAddress: :9997" >> "$INSTALL_DIR/mediamtx.yml"
-sed -i "s|^apiAllowOrigins:.*|apiAllowOrigins: ['*']|" "$INSTALL_DIR/mediamtx.yml" || echo "apiAllowOrigins: ['*']" >> "$INSTALL_DIR/mediamtx.yml"
-sed -i 's/^authMethods:.*/authMethods: []/' "$INSTALL_DIR/mediamtx.yml" || echo "authMethods: []" >> "$INSTALL_DIR/mediamtx.yml"
+cat > "$INSTALL_DIR/mediamtx.yml" <<EOF
+logLevel: info
+logDestinations: [stdout]
 
-grep -q "^webrtc:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtc: yes" >> "$INSTALL_DIR/mediamtx.yml"
-grep -q "^webrtcAddress:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtcAddress: :8889" >> "$INSTALL_DIR/mediamtx.yml"
+###############################################
+# Authentication (open – isolated AP appliance)
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+      - action: metrics
+      - action: pprof
+
+###############################################
+# Control API
+
+api: true
+apiAddress: :9997
+apiAllowOrigins: ['*']
+
+###############################################
+# RTSP (ingest)
+
+rtsp: true
+rtspAddress: :8554
+
+###############################################
+# Disable unused protocols
+
+rtmp: false
+hls: false
+srt: false
+metrics: false
+pprof: false
+playback: false
+
+###############################################
+# WebRTC (viewer)
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ['*']
+
+###############################################
+# Default path behavior
+
+pathDefaults:
+  source: publisher
+  overridePublisher: true
+
+paths:
+  all_others:
+EOF
 
 chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
