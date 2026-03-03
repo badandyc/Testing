@@ -1,5 +1,5 @@
 BDM \
-Step 1: Bootstrap (hostname + Avahi)
+Step 1: Bootstrap (hostname + Avahi) \
 rm -f bdm_initial_setup && \
 curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_initial_setup.sh?$(date +%s)" -o bdm_initial_setup && \
 sudo bash bdm_initial_setup
