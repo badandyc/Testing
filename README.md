@@ -1,17 +1,17 @@
 BDM
 Step 1: Bootstrap (hostname + Avahi)
 rm -f bdm_initial_setup && \
-curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_initial_setup?$(date +%s)" -o bdm_initial_setup && \
+curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_initial_setup.sh?$(date +%s)" -o bdm_initial_setup && \
 sudo bash bdm_initial_setup
 
 Step 2: Build AP + Networking
 rm -f bdm_AP_setup && \
-curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_AP_setup?$(date +%s)" -o bdm_AP_setup && \
+curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_AP_setup.sh?$(date +%s)" -o bdm_AP_setup && \
 sudo bash bdm_AP_setup
 
 Step 3: Install MediaMTX
 rm -f bdm_mediamtx_setup && \
-curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_mediamtx_setup?$(date +%s)" -o bdm_mediamtx_setup && \
+curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdm_mediamtx_setup.sh?$(date +%s)" -o bdm_mediamtx_setup && \
 sudo bash bdm_mediamtx_setup
 
 Step 4: Install Nginx
