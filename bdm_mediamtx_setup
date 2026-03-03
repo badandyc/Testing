@@ -11,10 +11,12 @@ INSTALL_DIR="/opt/mediamtx"
 echo "=== Creating mediamtx user ==="
 id -u mediamtx &>/dev/null || useradd -r -s /usr/sbin/nologin mediamtx
 
-echo "=== Downloading latest MediaMTX (auto-detect) ==="
+echo "=== Preparing /tmp workspace ==="
 cd /tmp
-rm -rf mediamtx* 2>/dev/null || true
+rm -f mediamtx.tar.gz
+rm -f mediamtx mediamtx.yml LICENSE
 
+echo "=== Downloading latest MediaMTX (auto-detect) ==="
 LATEST_URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
   | grep browser_download_url \
   | grep linux_arm64.tar.gz \
@@ -27,28 +29,20 @@ fi
 
 curl -L -o mediamtx.tar.gz "$LATEST_URL"
 
+echo "=== Extracting archive ==="
+tar -xzf mediamtx.tar.gz
+
+if [ ! -f "mediamtx" ] || [ ! -f "mediamtx.yml" ]; then
+  echo "Extraction failed: required files missing"
+  exit 1
+fi
+
 echo "=== Installing MediaMTX ==="
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
-tar -xzf mediamtx.tar.gz
-
-# Detect flat layout (current upstream behavior)
-if [ -f "./mediamtx" ] && [ -f "./mediamtx.yml" ]; then
-  mv mediamtx "$INSTALL_DIR/"
-  mv mediamtx.yml "$INSTALL_DIR/"
-else
-  echo "Extraction failed: expected files not found"
-  exit 1
-fi
-
-if [ ! -f "$SRC_DIR/mediamtx" ] || [ ! -f "$SRC_DIR/mediamtx.yml" ]; then
-  echo "Required files missing after extraction"
-  exit 1
-fi
-
-mv "$SRC_DIR/mediamtx" "$INSTALL_DIR/"
-mv "$SRC_DIR/mediamtx.yml" "$INSTALL_DIR/"
+mv mediamtx "$INSTALL_DIR/"
+mv mediamtx.yml "$INSTALL_DIR/"
 
 echo "=== Configuring MediaMTX ==="
 
@@ -64,6 +58,7 @@ grep -q "^webrtcAddress:" "$INSTALL_DIR/mediamtx.yml" || echo "webrtcAddress: :8
 chown -R mediamtx:mediamtx "$INSTALL_DIR"
 
 echo "=== Creating systemd service ==="
+
 cat > /etc/systemd/system/mediamtx.service <<EOF
 [Unit]
 Description=MediaMTX Server
