@@ -25,6 +25,11 @@ rm -f bdc_fresh_install_setup.sh && \
 curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/bdc/bdc_fresh_install_setup.sh?$(date +%s)" -o bdc_fresh_install_setup.sh && \
 sudo bash bdc_fresh_install_setup.sh
 
+Add Mesh Network \
+rm -f add_mesh_network.sh && \
+curl -fsSL "https://raw.githubusercontent.com/badandyc/Testing/master/mesh/add_mesh_network.sh?$(date +%s)" -o add_mesh_network.sh && \
+sudo bash add_mesh_network.sh
+
 MISC: \
 ping <bdm-hostname>.local \
 systemctl status birddog-stream \
