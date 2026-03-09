@@ -15,7 +15,7 @@ if [ -d /etc/cloud ]; then
 fi
 
 # Prompt for hostname
-read -p "Enter new hostname (e.g. bdm-master): " NEW_HOSTNAME
+read -p "Enter new hostname (e.g. bdm-01): " NEW_HOSTNAME
 
 if [[ -z "$NEW_HOSTNAME" ]]; then
   echo "Hostname cannot be empty."
@@ -38,11 +38,39 @@ echo "Installing Avahi..."
 apt update
 apt install -y avahi-daemon
 
-# Clear any previous Avahi state
 rm -rf /var/lib/avahi-daemon/* || true
 
 systemctl enable avahi-daemon
 systemctl restart avahi-daemon
+
+echo "=== Determining mesh IP ==="
+
+HOST=$(hostname)
+
+if [[ $HOST =~ bdm-([0-9]+) ]]; then
+  ID=${BASH_REMATCH[1]}
+  MESH_IP="10.10.20.$ID"
+else
+  echo "ERROR: Hostname must follow pattern bdm-XX"
+  exit 1
+fi
+
+echo "Mesh IP will be $MESH_IP"
+
+echo "Configuring systemd-networkd for mesh..."
+
+mkdir -p /etc/systemd/network
+
+cat > /etc/systemd/network/30-mesh.network <<EOF
+[Match]
+Name=wlan1
+
+[Network]
+Address=${MESH_IP}/24
+EOF
+
+systemctl enable systemd-networkd
+systemctl restart systemd-networkd
 
 echo "Updating system..."
 #apt full-upgrade -y
@@ -50,6 +78,8 @@ echo "Updating system..."
 
 echo "=== Bootstrap complete ==="
 echo "Hostname: $NEW_HOSTNAME"
+echo "Mesh IP: $MESH_IP"
+
 echo "Rebooting in 5 seconds..."
 sleep 5
 reboot
