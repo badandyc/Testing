@@ -34,4 +34,4 @@ MISC: \
 ping <bdm-hostname>.local \
 systemctl status birddog-stream \
 http://10.10.10.1:8889/cam01 \
-sshkeygen -R x.x.x.x \
+ssh-keygen -R x.x.x.x \
