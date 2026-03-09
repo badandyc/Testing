@@ -72,6 +72,25 @@ hostname "$NEW_HOSTNAME"
 
 systemctl restart avahi-daemon
 
+echo "=== Determining mesh IP ==="
+
+MESH_IP="10.10.20.$((NODE_NUM*10))"
+
+echo "Mesh IP will be $MESH_IP"
+
+mkdir -p /etc/systemd/network
+
+cat > /etc/systemd/network/30-mesh.network <<EOF
+[Match]
+Name=wlan1
+
+[Network]
+Address=${MESH_IP}/24
+EOF
+
+systemctl enable systemd-networkd
+systemctl restart systemd-networkd
+
 echo "Installing stream script..."
 
 cat <<EOF > /usr/local/bin/birddog-stream.sh
@@ -133,6 +152,7 @@ systemctl daemon-reload
 systemctl enable birddog-stream.service
 
 echo "=== Installation Complete ==="
+echo "Mesh IP: $MESH_IP"
 echo "Rebooting in 5 seconds..."
 sleep 5
 reboot
