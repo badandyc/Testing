@@ -14,6 +14,9 @@ PASSPHRASE="StrongPass123"
 echo "=== Unblocking WiFi ==="
 rfkill unblock wifi || true
 
+echo "=== Set regulatory domain ==="
+iw reg set US || true
+
 echo "=== Installing required packages ==="
 apt update
 apt install -y hostapd dnsmasq
@@ -70,8 +73,17 @@ fi
 systemctl unmask hostapd || true
 systemctl enable hostapd
 
+echo "=== Configure hostapd startup ordering ==="
+mkdir -p /etc/systemd/system/hostapd.service.d
+cat > /etc/systemd/system/hostapd.service.d/override.conf <<EOF
+[Unit]
+After=systemd-networkd.service
+EOF
+
 echo "=== Configure dnsmasq ==="
+systemctl stop dnsmasq || true
 rm -f /etc/dnsmasq.conf
+
 cat > /etc/dnsmasq.conf <<EOF
 interface=${AP_IF}
 bind-dynamic
@@ -81,11 +93,13 @@ EOF
 systemctl enable dnsmasq
 
 echo "=== Ensure WiFi unblocked on boot ==="
-mkdir -p /etc/systemd/system/hostapd.service.d
 cat > /etc/systemd/system/hostapd.service.d/rfkill.conf <<EOF
 [Service]
 ExecStartPre=/usr/sbin/rfkill unblock wifi
 EOF
+
+echo "=== Disable WiFi power save ==="
+iw dev ${AP_IF} set power_save off || true
 
 systemctl daemon-reload
 
