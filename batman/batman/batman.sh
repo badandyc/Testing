@@ -60,7 +60,9 @@ echo "  $MESH_IF in mesh point mode"
 # ── Join mesh ──
 echo "[5] Joining mesh '$MESH_ID' on $FREQ MHz..."
 iw dev "$MESH_IF" mesh join "$MESH_ID" freq "$FREQ" HT20
-echo "  Joined"
+# Disable 802.11s forwarding — batman-adv owns all routing
+iw dev "$MESH_IF" set mesh_param mesh_fwding 0
+echo "  Joined (mesh_fwding disabled)"
 
 # ── batman-adv ──
 echo "[6] Attaching batman-adv..."
