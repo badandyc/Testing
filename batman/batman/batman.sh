@@ -172,9 +172,15 @@ setup() {
 
     iw dev "$MESH_IF" set mesh_param mesh_fwding 0 2>/dev/null || true
 
+    # Set MTU on wlan1 to accommodate batman-adv header overhead.
+    # batman-adv requires at least 1532 bytes on the underlying interface.
+    # bat0 stays at standard 1500.
+    ip link set "$MESH_IF" mtu 1532 2>/dev/null || true
+
     modprobe batman-adv 2>/dev/null || true
     batctl if add "$MESH_IF" 2>/dev/null || true
     ip link set "$BAT_IF" up 2>/dev/null || true
+    ip link set "$BAT_IF" mtu 1500 2>/dev/null || true
     ip addr replace "$MESH_IP" dev "$BAT_IF" 2>/dev/null || true
 
     log "Mesh up — IP: $MESH_IP"
