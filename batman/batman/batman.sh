@@ -3,7 +3,7 @@
 # batman-adv mesh setup
 # Fresh RPi Lite image, MT7612U on wlan1
 # 802.11s mesh point + batman-adv, 2.4 GHz channel 1
-#
+# 1
 # Usage: sudo bash batman.sh
 
 set -e
