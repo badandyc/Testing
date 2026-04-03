@@ -12,10 +12,10 @@ if [[ "$EUID" -ne 0 ]]; then
     exec sudo bash "$0" "$@"
 fi
 
-MESH_IF="wlan1"
+MESH_IF="wlan_mesh_5"
 MESH_ID="birddog-mesh"
 BAT_IF="bat0"
-FREQ=2412
+FREQ=5180
 
 echo "================================="
 echo "batman-adv mesh setup"
@@ -34,7 +34,26 @@ MESH_IP="10.10.20.${OCTET}/24"
 echo ""
 echo "  Interface : $MESH_IF"
 echo "  Mesh IP   : $MESH_IP"
-echo "  Channel   : 1 ($FREQ MHz)"
+echo "  Channel   : 36 ($FREQ MHz)"
+echo ""
+
+# ── udev rule — pin MT7612U to wlan_mesh ──
+echo "[1] Installing udev rule for MT7612U..."
+cat > /etc/udev/rules.d/72-batman-radios.rules << 'EOF'
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="mt76x2u", NAME="wlan_mesh_5"
+EOF
+udevadm control --reload-rules
+echo "  MT7612U pinned to wlan_mesh_5"
+
+# Check if wlan_mesh already exists (post-reboot run)
+if ! ip link show "$MESH_IF" >/dev/null 2>&1; then
+    echo ""
+    echo "  Udev rule installed — reboot required"
+    echo "  After reboot, re-run this script to complete mesh setup"
+    echo ""
+    exit 0
+fi
+echo "  wlan_mesh_5 present — continuing with mesh setup"
 echo ""
 
 # ── Update package index first ──
@@ -43,7 +62,7 @@ apt-get update -qq
 echo "  Done"
 
 # ── eth0 — configure before removing NetworkManager ──
-echo "[1] Configuring eth0 for DHCP via ifupdown..."
+echo "[2] Configuring eth0 for DHCP via ifupdown..."
 apt-get install -y -qq ifupdown
 cat > /etc/network/interfaces << 'EOF'
 auto lo
@@ -55,18 +74,18 @@ EOF
 echo "  eth0 configured for DHCP via ifupdown"
 
 # ── Remove NetworkManager and rfkill ──
-echo "[2] Removing NetworkManager and rfkill..."
+echo "[3] Removing NetworkManager and rfkill..."
 apt-get purge -y network-manager rfkill 2>/dev/null || true
 apt-get autoremove -y 2>/dev/null || true
 echo "  Done"
 
 # ── Dependencies ──
-echo "[3] Installing dependencies..."
+echo "[4] Installing dependencies..."
 apt-get install -y batctl iw wireless-tools
 echo "  Done"
 
 # ── batman-adv kernel module ──
-echo "[4] Loading batman-adv module..."
+echo "[5] Loading batman-adv module..."
 modprobe batman-adv
 lsmod | grep -q batman_adv && echo "  batman_adv loaded" || { echo "  ERROR: module not loaded"; exit 1; }
 
@@ -75,32 +94,32 @@ echo "batman-adv" > /etc/modules-load.d/batman-adv.conf
 echo "  batman-adv configured to load on boot"
 
 # ── 802.11s mesh point ──
-echo "[5] Configuring $MESH_IF as mesh point..."
+echo "[6] Configuring $MESH_IF as mesh point..."
 ip link set "$MESH_IF" down
 iw dev "$MESH_IF" set type mp
 ip link set "$MESH_IF" up
 echo "  $MESH_IF in mesh point mode"
 
 # ── Join mesh ──
-echo "[6] Joining mesh '$MESH_ID' on $FREQ MHz..."
+echo "[7] Joining mesh '$MESH_ID' on $FREQ MHz..."
 iw dev "$MESH_IF" mesh join "$MESH_ID" freq "$FREQ"
 echo "  Joined"
 
 # ── batman-adv ──
-echo "[7] Attaching batman-adv..."
+echo "[8] Attaching batman-adv..."
 batctl if add "$MESH_IF"
 ip link set "$BAT_IF" up
 ip addr add "$MESH_IP" dev "$BAT_IF"
 echo "  bat0 up — IP: $MESH_IP"
 
 # ── MTU ──
-echo "[8] Setting MTU..."
+echo "[9] Setting MTU..."
 ip link set "$MESH_IF" mtu 1532
 ip link set "$BAT_IF" mtu 1500
 echo "  wlan1 MTU: 1532  bat0 MTU: 1500"
 
 # ── mesh_fwding ──
-echo "[9] Disabling 802.11s forwarding..."
+echo "[10] Disabling 802.11s forwarding..."
 iw dev "$MESH_IF" set mesh_param mesh_fwding 0
 echo "  mesh_fwding: 0"
 
