@@ -101,7 +101,7 @@ echo "[4] Installing batman-mesh-join service script..."
 cat > /usr/local/bin/batman-mesh-join.sh << 'MESH_SCRIPT'
 #!/bin/bash
 
-# BirdDog batman-adv mesh runtime
+# batman-adv mesh runtime
 # Watches for wlan1, configures 802.11s mesh point, attaches batman-adv
 # Recovers automatically on adapter hotplug or mesh loss
 # Runs as batman-mesh.service
@@ -139,7 +139,7 @@ batman_attached() {
 }
 
 bat0_has_ip() {
-    ip addr show "$BAT_IF" 2>/dev/null | grep -q "$MESH_IP"
+    ip addr show "$BAT_IF" 2>/dev/null | grep -q "${MESH_IP%/*}"
 }
 
 teardown() {
@@ -153,23 +153,22 @@ teardown() {
 setup() {
     log "Setting up mesh..."
 
-    # Load batman-adv first — matches the order that worked manually
-    modprobe batman-adv 2>/dev/null || true
-
-    iw reg set US 2>/dev/null || true
-    sleep 1
-
-    # Unblock wlan1 via rfkill index — some adapters get re-blocked on link down
+    # Unblock wlan1 — soft blocked after reboot on some adapters
     RFKILL_IDX=$(cat /sys/class/net/${MESH_IF}/phy80211/rfkill*/index 2>/dev/null)
     [[ -n "$RFKILL_IDX" ]] && rfkill unblock "$RFKILL_IDX" 2>/dev/null || true
     sleep 1
 
+    # Load batman-adv before interface setup
+    modprobe batman-adv 2>/dev/null || true
+
     ip link set "$MESH_IF" down 2>/dev/null || true
     sleep 1
+
     iw dev "$MESH_IF" set type mp 2>/dev/null || {
         log "ERROR: could not set mesh point mode"
         return 1
     }
+
     ip link set "$MESH_IF" up 2>/dev/null || true
     sleep 1
 
@@ -178,17 +177,17 @@ setup() {
         return 1
     }
 
-    iw dev "$MESH_IF" set mesh_param mesh_fwding 0 2>/dev/null || true
-
-    # Set MTU on wlan1 to accommodate batman-adv header overhead.
-    # batman-adv requires at least 1532 bytes on the underlying interface.
-    # bat0 stays at standard 1500.
-    ip link set "$MESH_IF" mtu 1532 2>/dev/null || true
-
+    # Attach batman-adv before setting mesh params and MTU
     batctl if add "$MESH_IF" 2>/dev/null || true
     ip link set "$BAT_IF" up 2>/dev/null || true
-    ip link set "$BAT_IF" mtu 1500 2>/dev/null || true
     ip addr replace "$MESH_IP" dev "$BAT_IF" 2>/dev/null || true
+
+    # Disable 802.11s forwarding — batman-adv owns all routing
+    iw dev "$MESH_IF" set mesh_param mesh_fwding 0 2>/dev/null || true
+
+    # Set MTU — batman-adv requires 1532 on underlying interface
+    ip link set "$MESH_IF" mtu 1532 2>/dev/null || true
+    ip link set "$BAT_IF" mtu 1500 2>/dev/null || true
 
     log "Mesh up — IP: $MESH_IP"
     return 0
@@ -268,7 +267,7 @@ echo "  batman-mesh.service installed and started"
 
 # ── Verify ──
 echo ""
-sleep 5
+sleep 8
 echo "================================="
 echo "Verification"
 echo "================================="
@@ -278,6 +277,10 @@ iw dev "$MESH_IF" info 2>/dev/null | grep -E "type|channel|freq|txpower" || echo
 echo ""
 echo "--- bat0 ---"
 ip addr show "$BAT_IF" 2>/dev/null | grep inet || echo "  bat0 IP not assigned yet"
+echo ""
+echo "--- MTU ---"
+ip link show "$MESH_IF" | grep mtu
+ip link show "$BAT_IF" | grep mtu
 echo ""
 echo "--- batman-adv originators ---"
 batctl o 2>/dev/null || echo "  No originators yet"
