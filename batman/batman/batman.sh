@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# version: 3
+# version: 4
 # batman-adv mesh setup
 # Fresh RPi Lite image, MT7612U pinned to wlan_mesh_5 via udev
 # 802.11s mesh point + batman-adv, 5 GHz channel 36
@@ -124,7 +124,7 @@ echo "  Joined"
 echo "[9] Attaching batman-adv..."
 batctl if add "$MESH_IF"
 ip link set "$BAT_IF" up
-ip addr add "$MESH_IP" dev "$BAT_IF"
+ip addr replace "$MESH_IP" dev "$BAT_IF"
 echo "  bat0 up — IP: $MESH_IP"
 
 # ── MTU ──
