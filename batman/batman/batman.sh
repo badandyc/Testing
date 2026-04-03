@@ -37,44 +37,66 @@ echo "  Mesh IP   : $MESH_IP"
 echo "  Channel   : 1 ($FREQ MHz)"
 echo ""
 
+# ── eth0 — configure before removing NetworkManager ──
+echo "[0] Configuring eth0 for DHCP via ifupdown..."
+apt-get install -y -qq ifupdown
+cat > /etc/network/interfaces << 'EOF'
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+EOF
+echo "  eth0 configured for DHCP via ifupdown"
+
+# ── Remove NetworkManager and rfkill ──
+echo "[1] Removing NetworkManager and rfkill..."
+apt-get purge -y network-manager rfkill 2>/dev/null || true
+apt-get autoremove -y 2>/dev/null || true
+echo "  Done"
+
 # ── Dependencies ──
-echo "[1] Installing dependencies..."
+echo "[2] Installing dependencies..."
 apt-get update -qq
 apt-get install -y batctl iw wireless-tools
 echo "  Done"
 
 # ── batman-adv kernel module ──
-echo "[2] Loading batman-adv module..."
+echo "[3] Loading batman-adv module..."
 modprobe batman-adv
 lsmod | grep -q batman_adv && echo "  batman_adv loaded" || { echo "  ERROR: module not loaded"; exit 1; }
 
+# Make batman-adv load on boot
+echo "batman-adv" > /etc/modules-load.d/batman-adv.conf
+echo "  batman-adv configured to load on boot"
+
 # ── 802.11s mesh point ──
-echo "[3] Configuring $MESH_IF as mesh point..."
+echo "[4] Configuring $MESH_IF as mesh point..."
 ip link set "$MESH_IF" down
 iw dev "$MESH_IF" set type mp
 ip link set "$MESH_IF" up
 echo "  $MESH_IF in mesh point mode"
 
 # ── Join mesh ──
-echo "[4] Joining mesh '$MESH_ID' on $FREQ MHz..."
+echo "[5] Joining mesh '$MESH_ID' on $FREQ MHz..."
 iw dev "$MESH_IF" mesh join "$MESH_ID" freq "$FREQ"
 echo "  Joined"
 
 # ── batman-adv ──
-echo "[5] Attaching batman-adv..."
+echo "[6] Attaching batman-adv..."
 batctl if add "$MESH_IF"
 ip link set "$BAT_IF" up
 ip addr add "$MESH_IP" dev "$BAT_IF"
 echo "  bat0 up — IP: $MESH_IP"
 
 # ── MTU ──
-echo "[6] Setting MTU..."
+echo "[7] Setting MTU..."
 ip link set "$MESH_IF" mtu 1532
 ip link set "$BAT_IF" mtu 1500
 echo "  wlan1 MTU: 1532  bat0 MTU: 1500"
 
 # ── mesh_fwding ──
-echo "[7] Disabling 802.11s forwarding..."
+echo "[8] Disabling 802.11s forwarding..."
 iw dev "$MESH_IF" set mesh_param mesh_fwding 0
 echo "  mesh_fwding: 0"
 
@@ -83,6 +105,9 @@ echo ""
 echo "================================="
 echo "Verification"
 echo "================================="
+echo ""
+echo "--- rfkill ---"
+rfkill list 2>/dev/null || echo "  rfkill removed"
 echo ""
 echo "--- Interface ---"
 iw dev "$MESH_IF" info | grep -E "type|channel|freq|txpower"
