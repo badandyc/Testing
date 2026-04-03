@@ -153,6 +153,9 @@ teardown() {
 setup() {
     log "Setting up mesh..."
 
+    # Load batman-adv first — matches the order that worked manually
+    modprobe batman-adv 2>/dev/null || true
+
     iw reg set US 2>/dev/null || true
     sleep 1
 
@@ -177,7 +180,6 @@ setup() {
     # bat0 stays at standard 1500.
     ip link set "$MESH_IF" mtu 1532 2>/dev/null || true
 
-    modprobe batman-adv 2>/dev/null || true
     batctl if add "$MESH_IF" 2>/dev/null || true
     ip link set "$BAT_IF" up 2>/dev/null || true
     ip link set "$BAT_IF" mtu 1500 2>/dev/null || true
