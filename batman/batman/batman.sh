@@ -1,9 +1,12 @@
 #!/bin/bash
 
 # batman-adv mesh setup
-# Fresh RPi Lite image, MT7612U on wlan1
-# 802.11s mesh point + batman-adv, 2.4 GHz channel 1
-# 1
+# Fresh RPi Lite image, MT7612U pinned to wlan_mesh_5 via udev
+# 802.11s mesh point + batman-adv, 5 GHz channel 36
+#
+# Run 1: installs udev rule, prompts reboot
+# Run 2: completes mesh setup after reboot
+# 2
 # Usage: sudo bash batman.sh
 
 set -e
@@ -22,6 +25,25 @@ echo "batman-adv mesh setup"
 echo "================================="
 echo ""
 
+# ── udev rule — pin MT7612U to wlan_mesh_5 ──
+echo "[1] Installing udev rule for MT7612U..."
+cat > /etc/udev/rules.d/72-batman-radios.rules << 'EOF'
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="mt76x2u", NAME="wlan_mesh_5"
+EOF
+udevadm control --reload-rules
+echo "  MT7612U pinned to wlan_mesh_5"
+
+# Check if wlan_mesh_5 already exists (post-reboot run)
+if ! ip link show "$MESH_IF" >/dev/null 2>&1; then
+    echo ""
+    echo "  Udev rule installed — reboot required"
+    echo "  After reboot, re-run this script to complete mesh setup"
+    echo ""
+    exit 0
+fi
+echo "  wlan_mesh_5 present — continuing with mesh setup"
+echo ""
+
 # ── Prompt for node IP octet ──
 while true; do
     read -r -p "  Enter 2-digit node octet (10-99): " OCTET
@@ -35,25 +57,6 @@ echo ""
 echo "  Interface : $MESH_IF"
 echo "  Mesh IP   : $MESH_IP"
 echo "  Channel   : 36 ($FREQ MHz)"
-echo ""
-
-# ── udev rule — pin MT7612U to wlan_mesh ──
-echo "[1] Installing udev rule for MT7612U..."
-cat > /etc/udev/rules.d/72-batman-radios.rules << 'EOF'
-SUBSYSTEM=="net", ACTION=="add", DRIVERS=="mt76x2u", NAME="wlan_mesh_5"
-EOF
-udevadm control --reload-rules
-echo "  MT7612U pinned to wlan_mesh_5"
-
-# Check if wlan_mesh already exists (post-reboot run)
-if ! ip link show "$MESH_IF" >/dev/null 2>&1; then
-    echo ""
-    echo "  Udev rule installed — reboot required"
-    echo "  After reboot, re-run this script to complete mesh setup"
-    echo ""
-    exit 0
-fi
-echo "  wlan_mesh_5 present — continuing with mesh setup"
 echo ""
 
 # ── Update package index first ──
@@ -102,7 +105,7 @@ echo "  $MESH_IF in mesh point mode"
 
 # ── Join mesh ──
 echo "[7] Joining mesh '$MESH_ID' on $FREQ MHz..."
-iw dev "$MESH_IF" mesh join "$MESH_ID" freq "$FREQ"
+iw dev "$MESH_IF" mesh join "$MESH_ID" freq "$FREQ" HT20
 echo "  Joined"
 
 # ── batman-adv ──
@@ -116,7 +119,7 @@ echo "  bat0 up — IP: $MESH_IP"
 echo "[9] Setting MTU..."
 ip link set "$MESH_IF" mtu 1532
 ip link set "$BAT_IF" mtu 1500
-echo "  wlan1 MTU: 1532  bat0 MTU: 1500"
+echo "  $MESH_IF MTU: 1532  $BAT_IF MTU: 1500"
 
 # ── mesh_fwding ──
 echo "[10] Disabling 802.11s forwarding..."
