@@ -159,6 +159,11 @@ setup() {
     iw reg set US 2>/dev/null || true
     sleep 1
 
+    # Unblock wlan1 via rfkill index — some adapters get re-blocked on link down
+    RFKILL_IDX=$(cat /sys/class/net/${MESH_IF}/phy80211/rfkill*/index 2>/dev/null)
+    [[ -n "$RFKILL_IDX" ]] && rfkill unblock "$RFKILL_IDX" 2>/dev/null || true
+    sleep 1
+
     ip link set "$MESH_IF" down 2>/dev/null || true
     sleep 1
     iw dev "$MESH_IF" set type mp 2>/dev/null || {
