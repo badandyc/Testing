@@ -70,7 +70,8 @@ echo "======================================================"
 echo ""
 echo "[1/7] Installing build dependencies..."
 apt-get update -qq
-apt-get install -y dkms raspberrypi-kernel-headers wget
+apt-get install -y dkms wget
+    apt-get install -y linux-headers-$(uname -r)
 
 # =============================================================================
 # STEP 2 - Fetch driver source and write supporting files
