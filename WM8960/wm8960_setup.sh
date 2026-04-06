@@ -124,18 +124,100 @@ dkms install --force ${KERNEL_VER} -m ${MOD_NAME} -v ${MOD_VER}
 echo "      DKMS build complete"
 
 # =============================================================================
-# STEP 4 - Device tree overlay
+# STEP 4 - Build and install custom device tree overlay
 # =============================================================================
 echo ""
-echo "[4/7] Verifying device tree overlay..."
+echo "[4/7] Building custom device tree overlay..."
 
-DTBO="/boot/firmware/overlays/wm8960-soundcard.dtbo"
-if [ ! -f "${DTBO}" ]; then
-    echo "ERROR: ${DTBO} not found."
-    echo "       Ensure raspberrypi-kernel is installed and up to date."
+apt-get install -y device-tree-compiler 2>/dev/null
+
+# Write custom DTS - uses "Line" widgets instead of "Headphone"/"Speaker"
+# so DAPM treats outputs as always-on (no jack detection required)
+cat > /tmp/wm8960-birddog.dts << 'DTSEOF'
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2835";
+
+    fragment@0 {
+        target = <&i2s_clk_producer>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@1 {
+        target-path = "/";
+        __overlay__ {
+            wm8960_mclk: wm8960_mclk {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <12288000>;
+            };
+        };
+    };
+
+    fragment@2 {
+        target = <&i2c1>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "okay";
+
+            wm8960: wm8960@1a {
+                compatible = "wlf,wm8960";
+                reg = <0x1a>;
+                #sound-dai-cells = <0>;
+                AVDD-supply = <&vdd_5v0_reg>;
+                DVDD-supply = <&vdd_3v3_reg>;
+                clocks = <&wm8960_mclk>;
+                clock-names = "mclk";
+            };
+        };
+    };
+
+    fragment@3 {
+        target = <&sound>;
+        __overlay__ {
+            compatible = "simple-audio-card";
+            simple-audio-card,format = "i2s";
+            simple-audio-card,name = "wm8960-soundcard";
+            status = "okay";
+
+            simple-audio-card,widgets =
+                "Line", "Line Out",
+                "Line", "Line In",
+                "Microphone", "Mic Jack";
+
+            simple-audio-card,routing =
+                "Line Out", "HP_L",
+                "Line Out", "HP_R",
+                "Line Out", "SPK_LP",
+                "Line Out", "SPK_LN",
+                "LINPUT1", "Mic Jack",
+                "LINPUT3", "Mic Jack",
+                "RINPUT1", "Mic Jack",
+                "RINPUT2", "Mic Jack";
+
+            simple-audio-card,cpu {
+                sound-dai = <&i2s_clk_producer>;
+            };
+
+            simple-audio-card,codec {
+                sound-dai = <&wm8960>;
+            };
+        };
+    };
+};
+DTSEOF
+
+dtc -@ -I dts -O dtb -o /boot/firmware/overlays/wm8960-birddog.dtbo /tmp/wm8960-birddog.dts
+if [ ! -f /boot/firmware/overlays/wm8960-birddog.dtbo ]; then
+    echo "ERROR: Failed to compile device tree overlay"
     exit 1
 fi
-echo "      Found: ${DTBO}"
+echo "      Custom overlay compiled: wm8960-birddog.dtbo"
 
 # =============================================================================
 # STEP 5 - Configure /boot/firmware/config.txt
@@ -157,10 +239,12 @@ if ! grep -q "^dtparam=i2c_arm=on" ${CFG}; then
     fi
 fi
 
-# Add wm8960-soundcard overlay
-if ! grep -q "^dtoverlay=wm8960-soundcard" ${CFG}; then
-    echo "dtoverlay=wm8960-soundcard" >> ${CFG}
+# Add wm8960-birddog overlay
+if ! grep -q "^dtoverlay=wm8960-birddog" ${CFG}; then
+    echo "dtoverlay=wm8960-birddog" >> ${CFG}
 fi
+# Remove stock overlay if present
+sed -i '/^dtoverlay=wm8960-soundcard/d' ${CFG}
 
 # Remove stale entries from previous attempts
 sed -i '/^dtoverlay=gpio-clock/d' ${CFG}
