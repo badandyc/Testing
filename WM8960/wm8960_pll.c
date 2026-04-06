@@ -1421,6 +1421,10 @@ static int wm8960_probe(struct snd_soc_component *component)
 	snd_soc_dapm_force_enable_pin(snd_soc_component_get_dapm(component),
 				      "SPK_LN");
 
+	/* Enable PCM playback routes through output mixers */
+	snd_soc_component_update_bits(component, WM8960_LOUTMIX, 0x100, 0x100);
+	snd_soc_component_update_bits(component, WM8960_ROUTMIX, 0x100, 0x100);
+
 	return 0;
 }
 
