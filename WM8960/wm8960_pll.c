@@ -1410,6 +1410,17 @@ static int wm8960_probe(struct snd_soc_component *component)
 				     ARRAY_SIZE(wm8960_snd_controls));
 	wm8960_add_widgets(component);
 
+	/* Force enable output pins so DAPM powers up DAC path
+	 * without requiring jack detection (Pi I2S slave mode) */
+	snd_soc_dapm_force_enable_pin(snd_soc_component_get_dapm(component),
+				      "HP_L");
+	snd_soc_dapm_force_enable_pin(snd_soc_component_get_dapm(component),
+				      "HP_R");
+	snd_soc_dapm_force_enable_pin(snd_soc_component_get_dapm(component),
+				      "SPK_LP");
+	snd_soc_dapm_force_enable_pin(snd_soc_component_get_dapm(component),
+				      "SPK_LN");
+
 	return 0;
 }
 
