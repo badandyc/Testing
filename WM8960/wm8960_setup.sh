@@ -336,6 +336,34 @@ EOF
 chmod +x /usr/local/bin/wm8960
 echo "      wm8960 CLI installed (/usr/local/bin/wm8960)"
 
+# Install PTT service
+PTT_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/wm8960_ptt.py"
+wget -q -O /usr/local/bin/wm8960_ptt.py "${PTT_URL}"
+if [ ! -s /usr/local/bin/wm8960_ptt.py ]; then
+    echo "      WARNING: Could not download wm8960_ptt.py"
+else
+    chmod +x /usr/local/bin/wm8960_ptt.py
+
+    cat > /etc/systemd/system/wm8960-ptt.service << 'EOF'
+[Unit]
+Description=WM8960 Push-To-Talk Service
+After=sound.target wm8960-mixer.service
+Wants=sound.target wm8960-mixer.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/wm8960_ptt.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl enable wm8960-ptt.service
+    echo "      PTT service installed (/usr/local/bin/wm8960_ptt.py)"
+fi
+
 # Download test wav file to home directory
 echo ""
 echo "      Downloading test audio file..."
