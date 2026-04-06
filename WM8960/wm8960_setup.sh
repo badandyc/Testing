@@ -287,6 +287,55 @@ EOF
 systemctl enable wm8960-mixer.service
 echo "      Mixer init service installed"
 
+# Install wm8960 CLI
+cat > /usr/local/bin/wm8960 << 'EOF'
+#!/bin/bash
+# wm8960 - CLI for WM8960 audio board
+# Usage: wm8960 record [file]
+#        wm8960 play [file]
+
+RECORD_FILE="/home/${SUDO_USER:-$(logname 2>/dev/null || echo pi)}/wm8960_recording.wav"
+PLAY_FILE="/home/${SUDO_USER:-$(logname 2>/dev/null || echo pi)}/wm8960_recording.wav"
+DURATION=5
+
+# Auto-detect wm8960 card number
+CARD=$(aplay -l 2>/dev/null | grep -i "wm8960" | head -1 | awk '{print $2}' | tr -d ':')
+if [ -z "${CARD}" ]; then
+    echo "ERROR: WM8960 sound card not found"
+    exit 1
+fi
+
+case "$1" in
+    record)
+        [ -n "$2" ] && RECORD_FILE="$2"
+        echo "Recording ${DURATION}s to ${RECORD_FILE} ..."
+        arecord -D hw:${CARD},0 -f S32_LE -r 16000 -c 2 -d ${DURATION} "${RECORD_FILE}"
+        echo "Done."
+        ;;
+    play)
+        [ -n "$2" ] && PLAY_FILE="$2"
+        if [ ! -f "${PLAY_FILE}" ]; then
+            echo "ERROR: File not found: ${PLAY_FILE}"
+            exit 1
+        fi
+        echo "Playing ${PLAY_FILE} ..."
+        aplay -D plughw:${CARD},0 "${PLAY_FILE}"
+        ;;
+    *)
+        echo "Usage: wm8960 record [file]"
+        echo "       wm8960 play [file]"
+        echo ""
+        echo "  record  - Record 5 seconds from MEMS mic"
+        echo "  play    - Play back last recording (or specified file)"
+        echo ""
+        echo "  Default file: ~/wm8960_recording.wav (overwritten each record)"
+        exit 1
+        ;;
+esac
+EOF
+chmod +x /usr/local/bin/wm8960
+echo "      wm8960 CLI installed (/usr/local/bin/wm8960)"
+
 # Download test wav file to home directory
 echo ""
 echo "      Downloading test audio file..."
@@ -315,9 +364,10 @@ echo "    TXSDA (board) -> Pi Pin 38 GPIO 20  [ADC: Board to Pi]"
 echo "    P1 jumper: ALL EMPTY"
 echo ""
 echo "  Reboot then test playback:"
-echo "    aplay -D plughw:0,0 -f S16_LE -r 48000 -c 2 sound_check.wav"
+echo "    wm8960 play sound_check.wav"
 echo "  Test capture:"
-echo "    arecord -D hw:0,0 -f S32_LE -r 16000 -c 2 -d 5 test.wav"
+echo "    wm8960 record"
+echo "    wm8960 play"
 echo "======================================================"
 echo ""
 echo "Run: sudo reboot"
