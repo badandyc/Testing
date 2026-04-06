@@ -1,0 +1,13 @@
+[Unit]
+Description=WM8960 Push-To-Talk Service
+After=sound.target wm8960-mixer.service
+Wants=sound.target wm8960-mixer.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/wm8960_ptt.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
