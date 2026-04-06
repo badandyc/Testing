@@ -236,6 +236,14 @@ rm -f /etc/asound.conf
 ln -s /etc/wm8960-soundcard/asound.conf /etc/asound.conf
 echo "      ALSA config installed"
 
+# Download test wav file to home directory
+echo ""
+echo "      Downloading test audio file..."
+WAV_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/sound_check.wav"
+wget -q -O /home/${SUDO_USER:-pi}/sound_check.wav "${WAV_URL}" && \
+    echo "      sound_check.wav downloaded to home directory" || \
+    echo "      WARNING: Could not download sound_check.wav"
+
 # =============================================================================
 # Done
 # =============================================================================
