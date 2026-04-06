@@ -26,8 +26,14 @@
 #   Board SCL   -> Pi Pin 5  (GPIO 3)
 #   Board CLK   -> Pi Pin 12 (GPIO 18) [I2S BCLK]
 #   Board WS    -> Pi Pin 35 (GPIO 19) [I2S LRCLK]
-#   Board TXSDA -> Pi Pin 40 (GPIO 21) [I2S DAC data out]
-#   Board RXSDA -> Pi Pin 38 (GPIO 20) [I2S ADC data in]
+#   Board RXSDA -> Pi Pin 40 (GPIO 21) [I2S DAC data: Pi->Board] *** NOTE: counterintuitive name ***
+#   Board TXSDA -> Pi Pin 38 (GPIO 20) [I2S ADC data: Board->Pi] *** NOTE: counterintuitive name ***
+#
+#   TXSDA/RXSDA are named from the BOARD's perspective:
+#     RXSDA = board receives audio = Pi transmits audio = connect to Pi GPIO 21 (I2S TX)
+#     TXSDA = board transmits audio = Pi receives audio = connect to Pi GPIO 20 (I2S RX)
+#   P1 jumper holes: ALL EMPTY - no jumper, no wire
+#   GPIO 4 (Pin 7): NOT CONNECTED
 #
 # Usage:
 #   chmod +x wm8960_setup.sh
@@ -238,6 +244,49 @@ rm -f /etc/asound.conf
 ln -s /etc/wm8960-soundcard/asound.conf /etc/asound.conf
 echo "      ALSA config installed"
 
+# Install mixer state file - sets capture gain and output routing on boot
+cat > /etc/wm8960-soundcard/mixer_init.sh << 'EOF'
+#!/bin/bash
+# WM8960 mixer initialization - runs at boot via systemd
+# Wait for sound card to be ready
+sleep 3
+CARD=0
+
+# Output routing - PCM playback through left/right output mixers
+amixer -c ${CARD} cset numid=51 on 2>/dev/null  # Left Output Mixer PCM Playback
+amixer -c ${CARD} cset numid=54 on 2>/dev/null  # Right Output Mixer PCM Playback
+
+# Headphone volume (120/127)
+amixer -c ${CARD} cset numid=11 120,120 2>/dev/null
+
+# Capture input boost - enable LINPUT1 boost for MEMS mic
+amixer -c ${CARD} cset numid=49 on 2>/dev/null  # Left Input Mixer Boost
+amixer -c ${CARD} cset numid=50 on 2>/dev/null  # Right Input Mixer Boost
+
+# Capture volume - max gain for MEMS mic
+amixer -c ${CARD} cset numid=1 63,63 2>/dev/null
+EOF
+chmod +x /etc/wm8960-soundcard/mixer_init.sh
+
+# Install systemd service for mixer init
+cat > /etc/systemd/system/wm8960-mixer.service << 'EOF'
+[Unit]
+Description=WM8960 mixer initialization
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=oneshot
+ExecStart=/etc/wm8960-soundcard/mixer_init.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable wm8960-mixer.service
+echo "      Mixer init service installed"
+
 # Download test wav file to home directory
 echo ""
 echo "      Downloading test audio file..."
@@ -258,9 +307,16 @@ echo "  Overlay:  dtoverlay=wm8960-soundcard active"
 echo "  BCM audio: disabled"
 echo "  Soundcard module: blacklisted (kernel 6.12 incompatible)"
 echo "  MCLK: derived by WM8960 PLL from BCLK — no GPIO needed"
+echo "  Mixer: auto-initialized at boot via wm8960-mixer.service"
 echo ""
-echo "  Reboot then test:"
-echo "    aplay -D hw:0,0 -f S32_LE -r 16000 -c 2 <file.wav>"
+echo "  WIRING REMINDER:"
+echo "    RXSDA (board) -> Pi Pin 40 GPIO 21  [DAC: Pi to Board]"
+echo "    TXSDA (board) -> Pi Pin 38 GPIO 20  [ADC: Board to Pi]"
+echo "    P1 jumper: ALL EMPTY"
+echo ""
+echo "  Reboot then test playback:"
+echo "    aplay -D plughw:0,0 -f S16_LE -r 48000 -c 2 sound_check.wav"
+echo "  Test capture:"
 echo "    arecord -D hw:0,0 -f S32_LE -r 16000 -c 2 -d 5 test.wav"
 echo "======================================================"
 echo ""
