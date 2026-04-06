@@ -750,8 +750,11 @@ static int wm8960_configure_clocking(struct snd_soc_component *component)
 
 	if (!(iface1 & (1<<6))) {
 		dev_dbg(component->dev,
-			"Codec is slave mode, no need to configure clock\n");
-		return 0;
+			"Codec is slave mode, configuring dividers from BCLK\n");
+		/* In slave mode Pi drives BCLK/LRCLK. WM8960 still needs
+		 * internal dividers configured. Use BCLK as freq_in for PLL. */
+		if (!wm8960->freq_in)
+			wm8960->freq_in = wm8960->bclk;
 	}
 
 	if (wm8960->clk_id != WM8960_SYSCLK_MCLK && !wm8960->freq_in) {
