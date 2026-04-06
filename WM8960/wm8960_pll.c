@@ -1425,6 +1425,21 @@ static int wm8960_probe(struct snd_soc_component *component)
 	snd_soc_component_update_bits(component, WM8960_LOUTMIX, 0x100, 0x100);
 	snd_soc_component_update_bits(component, WM8960_ROUTMIX, 0x100, 0x100);
 
+	/* Power up DAC, headphone outputs, and speaker outputs directly.
+	 * POWER2 bits: 8=LDAC, 7=RDAC, 6=LOUT1, 5=ROUT1, 4=SPKL, 3=SPKR */
+	snd_soc_component_update_bits(component, WM8960_POWER2,
+				      0x1f8, 0x1f8);
+
+	/* Unmute DAC - clear bit 3 of DACCTL1 */
+	snd_soc_component_update_bits(component, WM8960_DACCTL1, 0x8, 0x0);
+
+	/* Enable Class D speaker amplifier */
+	snd_soc_component_update_bits(component, WM8960_CLASSD1, 0xc0, 0xc0);
+
+	/* Set headphone volume to reasonable level (101 = ~0dB) */
+	snd_soc_component_write(component, WM8960_LOUT1, 0x179);
+	snd_soc_component_write(component, WM8960_ROUT1, 0x179);
+
 	return 0;
 }
 
