@@ -58,6 +58,7 @@ MOD_VER="1.0"
 MOD_NAME="wm8960-soundcard"
 SRC_DIR="/usr/src/${MOD_NAME}-${MOD_VER}"
 WM8960_C_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/wm8960.c"
+WM8960_H_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/wm8960.h"
 
 echo "======================================================"
 echo "  WM8960 Audio Board Setup"
@@ -86,13 +87,15 @@ fi
 rm -rf ${SRC_DIR}
 mkdir -p ${SRC_DIR}
 
-echo "      Fetching wm8960.c..."
+echo "      Fetching wm8960.c and wm8960.h..."
 wget -q -O ${SRC_DIR}/wm8960.c "${WM8960_C_URL}"
-if [ ! -s ${SRC_DIR}/wm8960.c ]; then
-    echo "ERROR: Failed to download wm8960.c"
+wget -q -O ${SRC_DIR}/wm8960.h "${WM8960_H_URL}"
+if [ ! -s ${SRC_DIR}/wm8960.c ] || [ ! -s ${SRC_DIR}/wm8960.h ]; then
+    echo "ERROR: Failed to download wm8960.c or wm8960.h"
     exit 1
 fi
 echo "      wm8960.c fetched ($(wc -l < ${SRC_DIR}/wm8960.c) lines)"
+echo "      wm8960.h fetched"
 
 cat > ${SRC_DIR}/Makefile << 'EOF'
 obj-m := snd-soc-wm8960.o
