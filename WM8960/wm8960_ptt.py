@@ -35,7 +35,7 @@ import RPi.GPIO as GPIO
 # Configuration
 # =============================================================================
 PTT_GPIO        = 16                          # GPIO 16, Pin 36
-RECORD_FILE     = os.path.expanduser("~/wm8960_recording.wav")
+RECORD_FILE     = "/home/birddog/wm8960_recording.wav"
 RECORD_FORMAT   = "S32_LE"
 RECORD_RATE     = 16000
 RECORD_CHANNELS = 2
