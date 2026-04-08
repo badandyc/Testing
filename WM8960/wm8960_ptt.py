@@ -93,11 +93,13 @@ def set_input_handset(card):
 # Recording
 # =============================================================================
 record_proc = None
+active_card = None
 
 def start_recording(card):
-    global record_proc
+    global record_proc, active_card
     if record_proc is not None:
         return
+    active_card = card
 
     # TODO: call set_input_handset(card) here when MH-48 is wired
     set_input_mems()
@@ -136,6 +138,14 @@ def stop_recording():
 
     log.info("PTT released — recording saved")
     log.info(f"  File: {RECORD_FILE}")
+
+    time.sleep(1)
+    log.info("Playing back recording...")
+    subprocess.Popen(
+        ["aplay", "-D", f"plughw:{card},0", RECORD_FILE],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
 # =============================================================================
 # Cleanup
