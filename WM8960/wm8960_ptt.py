@@ -123,7 +123,7 @@ def start_recording(card):
     )
 
 def stop_recording():
-    global record_proc
+    global record_proc, active_card
     if record_proc is None:
         return
 
@@ -142,7 +142,7 @@ def stop_recording():
     time.sleep(1)
     log.info("Playing back recording...")
     subprocess.Popen(
-        ["aplay", "-D", f"plughw:{card},0", RECORD_FILE],
+        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
