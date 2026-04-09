@@ -244,7 +244,7 @@ rm -f /etc/asound.conf
 ln -s /etc/wm8960-soundcard/asound.conf /etc/asound.conf
 echo "      ALSA config installed"
 
-# Install mixer state file - sets capture gain and output routing on boot
+# Install mixer state file - sets output routing and capture gain at boot
 cat > /etc/wm8960-soundcard/mixer_init.sh << 'EOF'
 #!/bin/bash
 # WM8960 mixer initialization - runs at boot via systemd
@@ -252,19 +252,26 @@ cat > /etc/wm8960-soundcard/mixer_init.sh << 'EOF'
 sleep 3
 CARD=0
 
-# Output routing - PCM playback through left/right output mixers
+# Output routing - PCM playback through left/right output mixers to TRRS
 amixer -c ${CARD} cset numid=51 on 2>/dev/null  # Left Output Mixer PCM Playback
 amixer -c ${CARD} cset numid=54 on 2>/dev/null  # Right Output Mixer PCM Playback
 
-# Headphone volume (120/127)
+# Headphone volume (120/127) - TRRS output
 amixer -c ${CARD} cset numid=11 120,120 2>/dev/null
 
-# Capture input boost - enable LINPUT1 boost for MEMS mic
+# Capture input boost - LINPUT1 for MEMS mic (default)
+# Switch to LINPUT3 when handset mic is wired
 amixer -c ${CARD} cset numid=49 on 2>/dev/null  # Left Input Mixer Boost
 amixer -c ${CARD} cset numid=50 on 2>/dev/null  # Right Input Mixer Boost
+amixer -c ${CARD} cset numid=45 on 2>/dev/null  # Left Boost Mixer LINPUT1
+amixer -c ${CARD} cset numid=9 3 2>/dev/null    # Left Input Boost LINPUT1 Volume
 
-# Capture volume - max gain for MEMS mic
+# Capture volume - max gain
 amixer -c ${CARD} cset numid=1 63,63 2>/dev/null
+
+# NOTE: J1 BTL output is no longer used. External amp (TPA3110) will be
+# fed from TRRS headphone output when hardware arrives.
+# TODO: when handset mic (MH-48) is wired, switch input from LINPUT1 to LINPUT3
 EOF
 chmod +x /etc/wm8960-soundcard/mixer_init.sh
 
