@@ -77,7 +77,7 @@ echo "======================================================"
 echo ""
 echo "[1/7] Installing build dependencies..."
 apt-get update -qq
-apt-get install -y dkms wget
+apt-get install -y dkms wget sox
     apt-get install -y linux-headers-$(uname -r)
 
 # =============================================================================
