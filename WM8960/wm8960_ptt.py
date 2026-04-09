@@ -109,7 +109,7 @@ def start_recording(card):
 
     cmd = [
         "arecord",
-        "-D", f"hw:{card},0",
+        "-D", f"plughw:{card},0",
         "-f", RECORD_FORMAT,
         "-r", str(RECORD_RATE),
         "-c", str(RECORD_CHANNELS),
@@ -142,7 +142,7 @@ def stop_recording():
     time.sleep(1)
     log.info("Playing back recording...")
     subprocess.Popen(
-        ["sox", RECORD_FILE, "-t", "alsa", f"plughw:{active_card},0", "remix", "1,2"],
+        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
