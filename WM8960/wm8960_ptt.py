@@ -142,7 +142,7 @@ def stop_recording():
     time.sleep(1)
     log.info("Playing back recording...")
     subprocess.Popen(
-        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
+        ["sox", RECORD_FILE, "-t", "alsa", f"plughw:{active_card},0", "remix", "1,2"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
