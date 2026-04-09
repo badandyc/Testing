@@ -38,7 +38,7 @@ PTT_GPIO        = 16                          # GPIO 16, Pin 36
 RECORD_FILE     = "/home/birddog/wm8960_recording.wav"
 RECORD_FORMAT   = "S32_LE"
 RECORD_RATE     = 16000
-RECORD_CHANNELS = 1
+RECORD_CHANNELS = 2
 DEBOUNCE_MS     = 50                          # ms debounce for PTT press
 
 LOG_LEVEL = logging.INFO
@@ -142,7 +142,7 @@ def stop_recording():
     time.sleep(1)
     log.info("Playing back recording...")
     subprocess.Popen(
-        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
+        ["sox", RECORD_FILE, "-t", "alsa", f"plughw:{active_card},0", "remix", "1,2"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
