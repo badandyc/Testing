@@ -17,13 +17,7 @@ gst-launch-1.0 udpsrc port=5004 ! application/x-rtp,encoding-name=OPUS,payload=9
 
 Full Duplex Testing: \
 Node 1: \
-ssh1 \
-gst-launch-1.0 alsasrc device=hw:0,0 ! audio/x-raw,rate=16000,channels=2,format=S32LE ! audioconvert ! opusenc ! rtpopuspay ! udpsink host=192.168.8.185 port=5004 \
-ssh2 \
-gst-launch-1.0 udpsrc port=5004 ! application/x-rtp,encoding-name=OPUS,payload=96 ! rtpopusdepay ! opusdec ! alsasink device=plughw:0,0
+sudo python3 /usr/local/bin/wm8960_ptt.py --peer 192.168.8.185
 
 Node 2: \
-ssh1 \
-gst-launch-1.0 alsasrc device=hw:0,0 ! audio/x-raw,rate=16000,channels=2,format=S32LE ! audioconvert ! opusenc ! rtpopuspay ! udpsink host=192.168.8.229 port=5004 \
-ssh2 \
-gst-launch-1.0 udpsrc port=5004 ! application/x-rtp,encoding-name=OPUS,payload=96 ! rtpopusdepay ! opusdec ! alsasink device=plughw:0,0
+sudo python3 /usr/local/bin/wm8960_ptt.py --peer 192.168.8.229
