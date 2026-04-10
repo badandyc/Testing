@@ -4,14 +4,14 @@
 # WM8960 Push-To-Talk background service
 #
 # Hardware:
-#   PTT button: GPIO 16 (Pin 36), active low, pull-up resistor
-#               MH-48 Pin 6 → GPIO 16; pin goes LOW when PTT pressed
+#   PTT button: GPIO 7 (Pin 26), active low, pull-up resistor
+#               MH-48 Pin 6 → GPIO 7; pin goes LOW when PTT pressed
 #
 # MH-48 handset wiring:
 #   Pin 3 = 5V power (GPIO Pin 4)
 #   Pin 4 = GND
 #   Pin 5 = MIC → TRRS Sleeve (WM8960 MIC IN)
-#   Pin 6 = PTT → GPIO 16 (active high, pull-down)
+#   Pin 6 = PTT → GPIO 7 (active low, pull-up)
 #
 # TRRS wiring:
 #   Tip     = LP Out  → TPA3110 amp
@@ -41,7 +41,7 @@ import RPi.GPIO as GPIO
 # =============================================================================
 # Configuration
 # =============================================================================
-PTT_GPIO        = 16                              # GPIO 16, Pin 36
+PTT_GPIO        = 7                               # GPIO 7, Pin 26
 RECORD_FILE     = "/home/birddog/wm8960_recording.wav"
 RECORD_FORMAT   = "S32_LE"
 RECORD_RATE     = 16000
@@ -125,7 +125,7 @@ def stop_recording():
 
     time.sleep(1)
     log.info("Playing back recording...")
-    subprocess.Popen(
+    subprocess.run(
         ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
@@ -154,7 +154,7 @@ def main():
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(PTT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 36), active low")
+    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 26), active low")
 
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
