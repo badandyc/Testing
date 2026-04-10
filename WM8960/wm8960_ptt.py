@@ -4,18 +4,25 @@
 # WM8960 Push-To-Talk background service
 #
 # Hardware:
-#   PTT button: GPIO 16 (Pin 36), active low (shorts to GND when pressed)
-#   Current mic: Onboard MEMS mic via LINPUT1
+#   PTT button: GPIO 16 (Pin 36), active high, pull-down resistor
+#               MH-48 Pin 6 → GPIO 16; pin goes HIGH when PTT pressed
 #
-# Future handset integration (MH-48):
-#   Mic input:     3.5mm TRRS mic ring (LINPUT3) - switch routing at PTT_START
-#   Speaker output: J1 BTL (LP/LN) via JST-PH connector
-#   PTT detection:  Same GPIO 16 logic, wired to handset PTT pin
+# MH-48 handset wiring:
+#   Pin 3 = 5V power (GPIO Pin 4)
+#   Pin 4 = GND
+#   Pin 5 = MIC → TRRS Sleeve (WM8960 MIC IN)
+#   Pin 6 = PTT → GPIO 16 (active high, pull-down)
+#
+# TRRS wiring:
+#   Tip     = LP Out  → TPA3110 amp
+#   Ring 1  = RP Out  → TPA3110 amp
+#   Ring 2  = GND
+#   Sleeve  = MIC IN  ← MH-48 Pin 5
 #
 # Behavior:
 #   - Press and hold PTT = record
-#   - Release PTT = stop recording, save to RECORD_FILE
-#   - File is overwritten on each record
+#   - Release PTT = stop recording, save to RECORD_FILE, play back
+#   - File is overwritten on each press
 #
 # Usage:
 #   sudo python3 wm8960_ptt.py          # run in foreground
@@ -34,12 +41,12 @@ import RPi.GPIO as GPIO
 # =============================================================================
 # Configuration
 # =============================================================================
-PTT_GPIO        = 16                          # GPIO 16, Pin 36
+PTT_GPIO        = 16                              # GPIO 16, Pin 36
 RECORD_FILE     = "/home/birddog/wm8960_recording.wav"
 RECORD_FORMAT   = "S32_LE"
 RECORD_RATE     = 16000
 RECORD_CHANNELS = 2
-DEBOUNCE_MS     = 50                          # ms debounce for PTT press
+DEBOUNCE_MS     = 50                              # ms debounce for PTT press
 
 LOG_LEVEL = logging.INFO
 
@@ -72,28 +79,10 @@ def find_wm8960_card():
     return None
 
 # =============================================================================
-# Input routing
-# =============================================================================
-def set_input_mems():
-    """Route MEMS mic (LINPUT1) as active input."""
-    # Currently MEMS is default - no switching needed
-    # TODO: when handset is integrated, switch FROM LINPUT3 back to LINPUT1 here
-    pass
-
-def set_input_handset(card):
-    """Route handset mic (LINPUT3 via TRRS) as active input.
-    TODO: implement when handset is wired
-    - Enable LINPUT3 boost
-    - Disable LINPUT1 boost
-    - Set appropriate gain for dynamic mic element (~30dB)
-    """
-    pass
-
-# =============================================================================
 # Recording
 # =============================================================================
 record_proc = None
-active_card = None
+active_card  = None
 
 def start_recording(card):
     global record_proc, active_card
@@ -101,15 +90,12 @@ def start_recording(card):
         return
     active_card = card
 
-    # TODO: call set_input_handset(card) here when MH-48 is wired
-    set_input_mems()
-
     log.info("PTT pressed — recording started")
     log.info(f"  File: {RECORD_FILE}")
 
     cmd = [
         "arecord",
-        "-D", f"plughw:{card},0",
+        "-D", f"hw:{card},0",
         "-f", RECORD_FORMAT,
         "-r", str(RECORD_RATE),
         "-c", str(RECORD_CHANNELS),
@@ -134,15 +120,13 @@ def stop_recording():
         record_proc.kill()
     record_proc = None
 
-    # TODO: trigger buzzer feedback here when buzzer is integrated
-
     log.info("PTT released — recording saved")
     log.info(f"  File: {RECORD_FILE}")
 
     time.sleep(1)
     log.info("Playing back recording...")
     subprocess.Popen(
-        ["sox", RECORD_FILE, "-t", "alsa", f"plughw:{active_card},0", "remix", "1,2"],
+        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
@@ -169,8 +153,8 @@ def main():
     log.info(f"WM8960 found at card {card}")
 
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(PTT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 36)")
+    GPIO.setup(PTT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 36), active high")
 
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
@@ -181,11 +165,11 @@ def main():
 
     try:
         while True:
-            ptt_pressed = (GPIO.input(PTT_GPIO) == GPIO.LOW)
+            ptt_pressed = (GPIO.input(PTT_GPIO) == GPIO.HIGH)
 
             if ptt_pressed and not ptt_active:
                 time.sleep(DEBOUNCE_MS / 1000.0)
-                if GPIO.input(PTT_GPIO) == GPIO.LOW:
+                if GPIO.input(PTT_GPIO) == GPIO.HIGH:
                     ptt_active = True
                     start_recording(card)
 
