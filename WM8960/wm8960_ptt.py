@@ -47,11 +47,11 @@ import RPi.GPIO as GPIO
 PTT_GPIO        = 7                               # GPIO 7, Pin 26
 PEER_IP         = "192.168.8.185"                 # default peer IP (override with --peer)
 RTP_PORT        = 5004                            # RTP port (same on all nodes)
-ALSA_SRC_DEV    = "hw:0,0"                        # ALSA capture device
-ALSA_SINK_DEV   = "plughw:0,0"                    # ALSA playback device
+ALSA_SRC_DEV    = "wm8960_dsnoop"                 # ALSA capture device (shared via dsnoop)
+ALSA_SINK_DEV   = "wm8960_dmix"                   # ALSA playback device (shared via dmix)
 SAMPLE_RATE     = 16000
 CHANNELS        = 2
-DEBOUNCE_MS     = 50                              # ms debounce for PTT press/release
+DEBOUNCE_MS     = 150                             # ms debounce for PTT press/release
 
 LOG_LEVEL = logging.INFO
 
