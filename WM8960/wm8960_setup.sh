@@ -90,7 +90,7 @@ echo "======================================================"
 echo ""
 echo "[1/7] Installing build dependencies..."
 apt-get update -qq
-apt-get install -y dkms wget sox gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+apt-get install -y dkms wget sox gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-alsa
 apt-get install -y linux-headers-$(uname -r)
 
 # =============================================================================
