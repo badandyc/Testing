@@ -123,13 +123,6 @@ def stop_recording():
     log.info("PTT released — recording saved")
     log.info(f"  File: {RECORD_FILE}")
 
-    time.sleep(1)
-    log.info("Playing back recording...")
-    subprocess.run(
-        ["aplay", "-D", f"plughw:{active_card},0", RECORD_FILE],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
 
 # =============================================================================
 # Cleanup
