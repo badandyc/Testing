@@ -11,6 +11,7 @@
 #   - Configures /boot/firmware/config.txt correctly
 #   - Installs ALSA config
 #   - Blacklists conflicting modules (soundcard module, bcm2835 audio)
+#   - Installs GStreamer with Opus support for RTP audio transport
 #   - Does NOT install the Waveshare soundcard service (incompatible with 6.12)
 #   - Does NOT configure MCLK via GPIO (WM8960 PLL derives clock from BCLK)
 #
@@ -34,6 +35,18 @@
 #     TXSDA = board transmits audio = Pi receives audio = connect to Pi GPIO 20 (I2S RX)
 #   P1 jumper holes: ALL EMPTY - no jumper, no wire
 #   GPIO 4 (Pin 7): NOT CONNECTED
+#
+# MH-48 handset wiring:
+#   Pin 3 = 5V power (GPIO Pin 4)
+#   Pin 4 = GND
+#   Pin 5 = MIC -> TRRS Sleeve (WM8960 MIC IN)
+#   Pin 6 = PTT -> GPIO 7 (Pin 26), active low, pull-up
+#
+# TRRS wiring:
+#   Tip    = LP Out -> TPA3110 amp
+#   Ring 1 = RP Out -> TPA3110 amp
+#   Ring 2 = GND
+#   Sleeve = MIC IN <- MH-48 Pin 5
 #
 # Usage:
 #   chmod +x wm8960_setup.sh
@@ -77,8 +90,8 @@ echo "======================================================"
 echo ""
 echo "[1/7] Installing build dependencies..."
 apt-get update -qq
-apt-get install -y dkms wget sox
-    apt-get install -y linux-headers-$(uname -r)
+apt-get install -y dkms wget sox gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+apt-get install -y linux-headers-$(uname -r)
 
 # =============================================================================
 # STEP 2 - Fetch driver source and write supporting files
@@ -207,10 +220,10 @@ fi
 echo "      Blacklists written"
 
 # =============================================================================
-# STEP 7 - ALSA config
+# STEP 7 - ALSA config, mixer init, CLI, PTT service
 # =============================================================================
 echo ""
-echo "[7/7] Installing ALSA config..."
+echo "[7/7] Installing ALSA config, mixer, CLI, and PTT service..."
 
 mkdir -p /etc/wm8960-soundcard
 
@@ -244,11 +257,10 @@ rm -f /etc/asound.conf
 ln -s /etc/wm8960-soundcard/asound.conf /etc/asound.conf
 echo "      ALSA config installed"
 
-# Install mixer state file - sets output routing and capture gain at boot
+# Mixer init script
 cat > /etc/wm8960-soundcard/mixer_init.sh << 'EOF'
 #!/bin/bash
 # WM8960 mixer initialization - runs at boot via systemd
-# Wait for sound card to be ready
 sleep 3
 CARD=0
 
@@ -259,23 +271,21 @@ amixer -c ${CARD} cset numid=54 on 2>/dev/null  # Right Output Mixer PCM Playbac
 # Headphone volume (120/127) - TRRS output
 amixer -c ${CARD} cset numid=11 120,120 2>/dev/null
 
-# Capture input boost - LINPUT1 for MEMS mic (default)
-# Switch to LINPUT3 when handset mic is wired
-amixer -c ${CARD} cset numid=49 on 2>/dev/null  # Left Input Mixer Boost
-amixer -c ${CARD} cset numid=50 on 2>/dev/null  # Right Input Mixer Boost
-amixer -c ${CARD} cset numid=45 on 2>/dev/null  # Left Boost Mixer LINPUT1
-amixer -c ${CARD} cset numid=9 3 2>/dev/null    # Left Input Boost LINPUT1 Volume
+# Input routing - LINPUT3 for MH-48 handset mic
+amixer -c ${CARD} cset numid=49 on 2>/dev/null   # Left Input Mixer Boost
+amixer -c ${CARD} cset numid=50 on 2>/dev/null   # Right Input Mixer Boost
+amixer -c ${CARD} cset numid=45 off 2>/dev/null  # Left Boost Mixer LINPUT1 off
+amixer -c ${CARD} cset numid=44 on 2>/dev/null   # Left Boost Mixer LINPUT3 on
+amixer -c ${CARD} cset numid=4 7 2>/dev/null     # Left Input Boost LINPUT3 Volume max
+amixer -c ${CARD} cset numid=47 on 2>/dev/null   # Right Boost Mixer RINPUT3 on
+amixer -c ${CARD} cset numid=6 7 2>/dev/null     # Right Input Boost RINPUT3 Volume max
 
 # Capture volume - max gain
 amixer -c ${CARD} cset numid=1 63,63 2>/dev/null
-
-# NOTE: J1 BTL output is no longer used. External amp (TPA3110) will be
-# fed from TRRS headphone output when hardware arrives.
-# TODO: when handset mic (MH-48) is wired, switch input from LINPUT1 to LINPUT3
 EOF
 chmod +x /etc/wm8960-soundcard/mixer_init.sh
 
-# Install systemd service for mixer init
+# Mixer systemd service
 cat > /etc/systemd/system/wm8960-mixer.service << 'EOF'
 [Unit]
 Description=WM8960 mixer initialization
@@ -294,18 +304,14 @@ EOF
 systemctl enable wm8960-mixer.service
 echo "      Mixer init service installed"
 
-# Install wm8960 CLI
+# wm8960 CLI
 cat > /usr/local/bin/wm8960 << 'EOF'
 #!/bin/bash
 # wm8960 - CLI for WM8960 audio board
-# Usage: wm8960 record [file]
-#        wm8960 play [file]
-
 RECORD_FILE="/home/${SUDO_USER:-$(logname 2>/dev/null || echo pi)}/wm8960_recording.wav"
 PLAY_FILE="/home/${SUDO_USER:-$(logname 2>/dev/null || echo pi)}/wm8960_recording.wav"
 DURATION=5
 
-# Auto-detect wm8960 card number
 CARD=$(aplay -l 2>/dev/null | grep -i "wm8960" | head -1 | awk '{print $2}' | tr -d ':')
 if [ -z "${CARD}" ]; then
     echo "ERROR: WM8960 sound card not found"
@@ -332,7 +338,7 @@ case "$1" in
         echo "Usage: wm8960 record [file]"
         echo "       wm8960 play [file]"
         echo ""
-        echo "  record  - Record 5 seconds from MEMS mic"
+        echo "  record  - Record 5 seconds from mic"
         echo "  play    - Play back last recording (or specified file)"
         echo ""
         echo "  Default file: ~/wm8960_recording.wav (overwritten each record)"
@@ -343,7 +349,7 @@ EOF
 chmod +x /usr/local/bin/wm8960
 echo "      wm8960 CLI installed (/usr/local/bin/wm8960)"
 
-# Install PTT service
+# PTT service
 PTT_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/wm8960_ptt.py"
 wget -q -O /usr/local/bin/wm8960_ptt.py "${PTT_URL}"
 if [ ! -s /usr/local/bin/wm8960_ptt.py ]; then
@@ -371,7 +377,7 @@ EOF
     echo "      PTT service installed (/usr/local/bin/wm8960_ptt.py)"
 fi
 
-# Download test wav file to home directory
+# Download test wav file
 echo ""
 echo "      Downloading test audio file..."
 WAV_URL="https://raw.githubusercontent.com/badandyc/Testing/master/WM8960/sound_check.wav"
@@ -392,11 +398,13 @@ echo "  BCM audio: disabled"
 echo "  Soundcard module: blacklisted (kernel 6.12 incompatible)"
 echo "  MCLK: derived by WM8960 PLL from BCLK — no GPIO needed"
 echo "  Mixer: auto-initialized at boot via wm8960-mixer.service"
+echo "  GStreamer: installed with Opus RTP support"
 echo ""
 echo "  WIRING REMINDER:"
 echo "    RXSDA (board) -> Pi Pin 40 GPIO 21  [DAC: Pi to Board]"
 echo "    TXSDA (board) -> Pi Pin 38 GPIO 20  [ADC: Board to Pi]"
 echo "    P1 jumper: ALL EMPTY"
+echo "    PTT: GPIO 7 (Pin 26), active low, pull-up"
 echo ""
 echo "  Reboot then test playback:"
 echo "    wm8960 play sound_check.wav"
