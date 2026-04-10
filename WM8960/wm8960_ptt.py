@@ -4,8 +4,8 @@
 # WM8960 Push-To-Talk background service
 #
 # Hardware:
-#   PTT button: GPIO 16 (Pin 36), active high, pull-down resistor
-#               MH-48 Pin 6 → GPIO 16; pin goes HIGH when PTT pressed
+#   PTT button: GPIO 16 (Pin 36), active low, pull-up resistor
+#               MH-48 Pin 6 → GPIO 16; pin goes LOW when PTT pressed
 #
 # MH-48 handset wiring:
 #   Pin 3 = 5V power (GPIO Pin 4)
@@ -153,8 +153,8 @@ def main():
     log.info(f"WM8960 found at card {card}")
 
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(PTT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 36), active high")
+    GPIO.setup(PTT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    log.info(f"PTT monitoring GPIO {PTT_GPIO} (Pin 36), active low")
 
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
@@ -165,17 +165,17 @@ def main():
 
     try:
         while True:
-            ptt_pressed = (GPIO.input(PTT_GPIO) == GPIO.HIGH)
+            ptt_pressed = (GPIO.input(PTT_GPIO) == GPIO.LOW)
 
             if ptt_pressed and not ptt_active:
                 time.sleep(DEBOUNCE_MS / 1000.0)
-                if GPIO.input(PTT_GPIO) == GPIO.HIGH:
+                if GPIO.input(PTT_GPIO) == GPIO.LOW:
                     ptt_active = True
                     start_recording(card)
 
             elif not ptt_pressed and ptt_active:
                 time.sleep(DEBOUNCE_MS / 1000.0)
-                if GPIO.input(PTT_GPIO) == GPIO.LOW:
+                if GPIO.input(PTT_GPIO) == GPIO.HIGH:
                     ptt_active = False
                     stop_recording()
 
