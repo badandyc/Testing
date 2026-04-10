@@ -90,7 +90,7 @@ echo "======================================================"
 echo ""
 echo "[1/7] Installing build dependencies..."
 apt-get update -qq
-apt-get install -y dkms wget sox gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-alsa
+apt-get install -y dkms wget sox gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-alsa python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
 apt-get install -y linux-headers-$(uname -r)
 
 # =============================================================================
@@ -228,28 +228,37 @@ echo "[7/7] Installing ALSA config, mixer, CLI, and PTT service..."
 mkdir -p /etc/wm8960-soundcard
 
 cat > /etc/wm8960-soundcard/asound.conf << 'EOF'
+pcm.wm8960_dmix {
+    type dmix
+    ipc_key 1024
+    slave {
+        pcm "hw:0,0"
+        rate 16000
+        channels 2
+        format S32_LE
+    }
+}
+
+pcm.wm8960_dsnoop {
+    type dsnoop
+    ipc_key 1025
+    slave {
+        pcm "hw:0,0"
+        rate 16000
+        channels 2
+        format S32_LE
+    }
+}
+
+pcm.wm8960_duplex {
+    type asym
+    playback.pcm "wm8960_dmix"
+    capture.pcm "wm8960_dsnoop"
+}
+
 pcm.!default {
-  type asym
-  capture.pcm "mic"
-  playback.pcm "speaker"
-}
-pcm.mic {
-  type plug
-  slave {
-    pcm "hw:0,0"
-    rate 16000
-    channels 2
-    format S32_LE
-  }
-}
-pcm.speaker {
-  type plug
-  slave {
-    pcm "hw:0,0"
-    rate 16000
-    channels 2
-    format S32_LE
-  }
+    type plug
+    slave.pcm "wm8960_duplex"
 }
 EOF
 
