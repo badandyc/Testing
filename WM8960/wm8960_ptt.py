@@ -174,8 +174,10 @@ def main():
                     start_recording(card)
 
             elif not ptt_pressed and ptt_active:
-                ptt_active = False
-                stop_recording()
+                time.sleep(DEBOUNCE_MS / 1000.0)
+                if GPIO.input(PTT_GPIO) == GPIO.LOW:
+                    ptt_active = False
+                    stop_recording()
 
             time.sleep(0.01)
 
