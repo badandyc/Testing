@@ -7,8 +7,8 @@
 #   verify  - guided verification, prompts for each button and shows detection
 #   monitor - continuous monitoring mode (default)
 #
-# Calibration table uses per-button tolerance derived from std deviation.
-# Run ads1115_calibrate.py to generate updated values.
+# Reads calibration from /home/birddog/ads1115_calibration.txt
+# Run ads1115_calibrate.py to regenerate calibration file.
 #
 # ADS1115 I2C address: 0x48, bus: 1
 # MH-48 powered at 5V (GPIO Pin 4)
@@ -41,38 +41,7 @@ MODE_SINGLE     = 0x0100
 DR_128SPS       = 0x0080
 COMP_DISABLE    = 0x0003
 
-# =============================================================================
-# Calibration table
-# Format: "BUTTON": (A0_avg, A1_avg, tolerance)
-# Tolerance is per-button, derived from 3x std deviation during calibration
-# Update these values by running ads1115_calibrate.py
-# =============================================================================
-CALIBRATION = {
-    "IDLE":  (0.4981, 0.5078, 0.0200),
-    "1":     (0.0147, 0.0124, 0.0050),
-    "2":     (0.0175, 0.0121, 0.0050),
-    "3":     (0.0227, 0.0121, 0.0084),
-    "A":     (0.0361, 0.0121, 0.0210),
-    "4":     (0.0146, 0.0142, 0.0050),
-    "5":     (0.0173, 0.0141, 0.0050),
-    "6":     (0.0225, 0.0141, 0.0082),
-    "B":     (0.0356, 0.0143, 0.0211),
-    "7":     (0.0148, 0.0172, 0.0050),
-    "8":     (0.0173, 0.0173, 0.0050),
-    "9":     (0.0226, 0.0171, 0.0074),
-    "C":     (0.0355, 0.0164, 0.0208),
-    "*":     (0.0149, 0.0224, 0.0068),
-    "0":     (0.0174, 0.0225, 0.0069),
-    "#":     (0.0227, 0.0227, 0.0079),
-    "D":     (0.0361, 0.0226, 0.0205),
-    "P1":    (0.0137, 0.0351, 0.0151),
-    "P2":    (0.0170, 0.0346, 0.0154),
-    "P3":    (0.0229, 0.0347, 0.0166),
-    "P4":    (0.0368, 0.0349, 0.0237),
-    "UP":    (0.0260, 0.0297, 0.0475),
-    "DOWN":  (0.0249, 0.0305, 0.0535),
-    "PTT":   (0.5898, 0.5670, 0.5427),
-}
+CALIBRATION_FILE = "/home/birddog/ads1115_calibration.txt"
 
 # Number of consecutive consistent readings to confirm a button press
 DEBOUNCE_COUNT = 3
@@ -86,6 +55,33 @@ BUTTONS = [
     "P1", "P2", "P3", "P4",
     "UP", "DOWN", "PTT"
 ]
+
+# =============================================================================
+# Load calibration from file
+# Format: Button  A0_avg  A1_avg  Tolerance (with V suffix)
+# =============================================================================
+def load_calibration(filepath):
+    calibration = {}
+    try:
+        with open(filepath, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("-") or line.startswith("Button"):
+                    continue
+                parts = line.split()
+                if len(parts) != 4:
+                    continue
+                button = parts[0]
+                a0 = float(parts[1].rstrip("V"))
+                a1 = float(parts[2].rstrip("V"))
+                tol = float(parts[3].rstrip("V"))
+                calibration[button] = (a0, a1, tol)
+        print(f"  Loaded {len(calibration)} entries from {filepath}")
+    except FileNotFoundError:
+        print(f"ERROR: Calibration file not found: {filepath}")
+        print("       Run ads1115_calibrate.py first.")
+        sys.exit(1)
+    return calibration
 
 # =============================================================================
 # ADS1115 read
@@ -105,13 +101,13 @@ def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
-# Button matching - per-button tolerance
+# Button matching - per-button tolerance, nearest neighbor within window
 # =============================================================================
-def match_button(v_a0, v_a1):
+def match_button(v_a0, v_a1, calibration):
     best_button = None
     best_distance = float('inf')
 
-    for button, (cal_a0, cal_a1, tolerance) in CALIBRATION.items():
+    for button, (cal_a0, cal_a1, tolerance) in calibration.items():
         if abs(v_a0 - cal_a0) <= tolerance and abs(v_a1 - cal_a1) <= tolerance:
             distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
             if distance < best_distance:
@@ -123,7 +119,7 @@ def match_button(v_a0, v_a1):
 # =============================================================================
 # Monitor mode
 # =============================================================================
-def monitor_mode(bus):
+def monitor_mode(bus, calibration):
     print("=" * 50)
     print("  MH-48 Button Detector — Monitor Mode")
     print("  Press buttons on the handset")
@@ -138,7 +134,7 @@ def monitor_mode(bus):
     try:
         while True:
             v_a0, v_a1 = read_both(bus)
-            button, distance = match_button(v_a0, v_a1)
+            button, distance = match_button(v_a0, v_a1, calibration)
 
             if button == candidate:
                 candidate_count += 1
@@ -162,7 +158,7 @@ def monitor_mode(bus):
 # =============================================================================
 # Verify mode
 # =============================================================================
-def verify_mode(bus):
+def verify_mode(bus, calibration):
     print("=" * 50)
     print("  MH-48 Button Detector — Verify Mode")
     print("  Follow prompts to verify each button")
@@ -177,7 +173,7 @@ def verify_mode(bus):
 
         for _ in range(10):
             v_a0, v_a1 = read_both(bus)
-            detected, distance = match_button(v_a0, v_a1)
+            detected, distance = match_button(v_a0, v_a1, calibration)
             detections.append((detected, distance, v_a0, v_a1))
             time.sleep(0.05)
 
@@ -203,12 +199,13 @@ def verify_mode(bus):
 # =============================================================================
 def main():
     bus = smbus2.SMBus(BUS)
+    calibration = load_calibration(CALIBRATION_FILE)
     mode = sys.argv[1] if len(sys.argv) > 1 else "monitor"
 
     if mode == "verify":
-        verify_mode(bus)
+        verify_mode(bus, calibration)
     else:
-        monitor_mode(bus)
+        monitor_mode(bus, calibration)
 
     bus.close()
 
