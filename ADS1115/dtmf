@@ -3,9 +3,12 @@
 # Usage: dtmf calibrate
 #        dtmf detect
 #        dtmf detect verify
+#        dtmf update calibrate
+#        dtmf update detect
 
 CALIBRATE_SCRIPT="/home/birddog/ads1115_calibrate.py"
 DETECT_SCRIPT="/home/birddog/ads1115_detect.py"
+REPO_BASE="https://raw.githubusercontent.com/badandyc/Testing/master/ADS1115"
 
 case "$1" in
     calibrate)
@@ -14,10 +17,31 @@ case "$1" in
     detect)
         python3 "${DETECT_SCRIPT}" "${2}"
         ;;
+    update)
+        case "$2" in
+            calibrate)
+                rm -f "${CALIBRATE_SCRIPT}" && \
+                curl -fsSL "${REPO_BASE}/ads1115_calibrate.py?$(date +%s)" -o "${CALIBRATE_SCRIPT}" && \
+                echo "ads1115_calibrate.py updated"
+                ;;
+            detect)
+                rm -f "${DETECT_SCRIPT}" && \
+                curl -fsSL "${REPO_BASE}/ads1115_detect.py?$(date +%s)" -o "${DETECT_SCRIPT}" && \
+                echo "ads1115_detect.py updated"
+                ;;
+            *)
+                echo "Usage: dtmf update calibrate"
+                echo "       dtmf update detect"
+                exit 1
+                ;;
+        esac
+        ;;
     *)
         echo "Usage: dtmf calibrate"
         echo "       dtmf detect"
         echo "       dtmf detect verify"
+        echo "       dtmf update calibrate"
+        echo "       dtmf update detect"
         exit 1
         ;;
 esac
