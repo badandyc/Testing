@@ -7,6 +7,9 @@
 #   verify  - guided verification, prompts for each button and shows detection
 #   monitor - continuous monitoring mode (default)
 #
+# Calibration table uses per-button tolerance derived from std deviation.
+# Run ads1115_calibrate.py to generate updated values.
+#
 # ADS1115 I2C address: 0x48, bus: 1
 # MH-48 powered at 5V (GPIO Pin 4)
 # SW1 -> ADS1115 A0
@@ -39,38 +42,37 @@ DR_128SPS       = 0x0080
 COMP_DISABLE    = 0x0003
 
 # =============================================================================
-# Calibration table (from ads1115_calibrate.py output)
-# Format: "BUTTON": (A0_voltage, A1_voltage)
+# Calibration table
+# Format: "BUTTON": (A0_avg, A1_avg, tolerance)
+# Tolerance is per-button, derived from 3x std deviation during calibration
+# Update these values by running ads1115_calibrate.py
 # =============================================================================
 CALIBRATION = {
-    "IDLE":  (0.5718, 0.4590),
-    "1":     (0.0145, 0.0121),
-    "2":     (0.0174, 0.0119),
-    "3":     (0.0226, 0.0120),
-    "A":     (0.0361, 0.0120),
-    "4":     (0.0144, 0.0140),
-    "5":     (0.0173, 0.0140),
-    "6":     (0.0224, 0.0139),
-    "B":     (0.0357, 0.0141),
-    "7":     (0.0146, 0.0171),
-    "8":     (0.0173, 0.0171),
-    "9":     (0.0225, 0.0170),
-    "C":     (0.0356, 0.0164),
-    "*":     (0.0147, 0.0225),
-    "0":     (0.0170, 0.0229),
-    "#":     (0.0226, 0.0223),
-    "D":     (0.0364, 0.0225),
-    "P1":    (0.0138, 0.0354),
-    "P2":    (0.0171, 0.0346),
-    "P3":    (0.0227, 0.0349),
-    "P4":    (0.0367, 0.0350),
-    "UP":    (0.0310, 0.0340),
-    "DOWN":  (0.0264, 0.0328),
-    "PTT":   (0.5838, 0.5701),
+    "IDLE":  (0.5718, 0.4590, 0.0200),
+    "1":     (0.0145, 0.0121, 0.0050),
+    "2":     (0.0174, 0.0119, 0.0050),
+    "3":     (0.0226, 0.0120, 0.0066),
+    "A":     (0.0361, 0.0120, 0.0186),
+    "4":     (0.0144, 0.0140, 0.0050),
+    "5":     (0.0173, 0.0140, 0.0050),
+    "6":     (0.0224, 0.0139, 0.0075),
+    "B":     (0.0357, 0.0141, 0.0213),
+    "7":     (0.0146, 0.0171, 0.0050),
+    "8":     (0.0173, 0.0171, 0.0050),
+    "9":     (0.0225, 0.0170, 0.0087),
+    "C":     (0.0356, 0.0164, 0.0228),
+    "*":     (0.0147, 0.0225, 0.0050),
+    "0":     (0.0170, 0.0229, 0.0050),
+    "#":     (0.0226, 0.0223, 0.0090),
+    "D":     (0.0364, 0.0225, 0.0228),
+    "P1":    (0.0138, 0.0354, 0.0165),
+    "P2":    (0.0171, 0.0346, 0.0171),
+    "P3":    (0.0227, 0.0349, 0.0186),
+    "P4":    (0.0367, 0.0350, 0.0255),
+    "UP":    (0.0310, 0.0340, 0.0363),
+    "DOWN":  (0.0264, 0.0328, 0.0477),
+    "PTT":   (0.5838, 0.5701, 0.5259),
 }
-
-# Maximum Euclidean distance to consider a valid match
-MAX_DISTANCE = 0.020
 
 # Number of consecutive consistent readings to confirm a button press
 DEBOUNCE_COUNT = 3
@@ -103,22 +105,23 @@ def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
-# Button matching - nearest neighbor with max distance threshold
+# Button matching - per-button tolerance
 # =============================================================================
 def match_button(v_a0, v_a1):
     best_button = None
-    best_distance = MAX_DISTANCE
+    best_distance = float('inf')
 
-    for button, (cal_a0, cal_a1) in CALIBRATION.items():
-        distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
-        if distance < best_distance:
-            best_distance = distance
-            best_button = button
+    for button, (cal_a0, cal_a1, tolerance) in CALIBRATION.items():
+        if abs(v_a0 - cal_a0) <= tolerance and abs(v_a1 - cal_a1) <= tolerance:
+            distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
+            if distance < best_distance:
+                best_distance = distance
+                best_button = button
 
-    return best_button, best_distance
+    return best_button, best_distance if best_button else 0.0
 
 # =============================================================================
-# Monitor mode - continuous detection
+# Monitor mode
 # =============================================================================
 def monitor_mode(bus):
     print("=" * 50)
@@ -157,7 +160,7 @@ def monitor_mode(bus):
         print("\nExiting.")
 
 # =============================================================================
-# Verify mode - guided per-button verification
+# Verify mode
 # =============================================================================
 def verify_mode(bus):
     print("=" * 50)
@@ -172,14 +175,12 @@ def verify_mode(bus):
         input(f"  Press and HOLD [{button}] then hit Enter...")
         detections = []
 
-        # Collect 10 readings while button is held
         for _ in range(10):
             v_a0, v_a1 = read_both(bus)
             detected, distance = match_button(v_a0, v_a1)
             detections.append((detected, distance, v_a0, v_a1))
             time.sleep(0.05)
 
-        # Find most common detection
         counts = {}
         for d, _, _, _ in detections:
             counts[d] = counts.get(d, 0) + 1
