@@ -108,13 +108,17 @@ def match_button(v_a0, v_a1, calibration):
     best_distance = float('inf')
 
     for button, (cal_a0, cal_a1, tolerance) in calibration.items():
+        if button == "IDLE":
+            continue  # IDLE is the default when nothing matches
         if abs(v_a0 - cal_a0) <= tolerance and abs(v_a1 - cal_a1) <= tolerance:
             distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
             if distance < best_distance:
                 best_distance = distance
                 best_button = button
 
-    return best_button, best_distance if best_button else 0.0
+    if best_button is None:
+        return "IDLE", 0.0
+    return best_button, best_distance
 
 # =============================================================================
 # Monitor mode
