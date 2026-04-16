@@ -252,14 +252,20 @@ def main():
     check_separation(calibration)
     check_cluster_size(calibration)
 
-    outfile = "/home/birddog/ads1115_calibration.txt"
-    with open(outfile, "w") as f:
-        f.write(f"{'Button':<6} {'A0_avg':>8} {'A1_avg':>8} {'A0_std':>8} {'A1_std':>8} {'COV':>10}\n")
-        f.write(f"{'-'*6} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*10}\n")
-        for button, v in calibration.items():
-            f.write(f"{button:<6} {v['A0']:>8.4f}V {v['A1']:>8.4f}V {v['STD_A0']:>8.4f}V {v['STD_A1']:>8.4f}V {v['COV']:>10.6f}\n")
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    outfile      = "/home/birddog/ads1115_calibration.txt"
+    outfile_ts   = f"/home/birddog/ads1115_calibration_{timestamp}.txt"
+
+    for path in [outfile, outfile_ts]:
+        with open(path, "w") as f:
+            f.write(f"{'Button':<6} {'A0_avg':>8} {'A1_avg':>8} {'A0_std':>8} {'A1_std':>8} {'COV':>10}\n")
+            f.write(f"{'-'*6} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*10}\n")
+            for button, v in calibration.items():
+                f.write(f"{button:<6} {v['A0']:>8.4f}V {v['A1']:>8.4f}V {v['STD_A0']:>8.4f}V {v['STD_A1']:>8.4f}V {v['COV']:>10.6f}\n")
 
     print(f"  Saved to {outfile}")
+    print(f"  Saved to {outfile_ts}")
 
 if __name__ == "__main__":
     main()
