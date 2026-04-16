@@ -131,6 +131,8 @@ def monitor_mode(bus, calibration):
     candidate = None
     candidate_count = 0
 
+    time.sleep(0.5)  # allow ADC readings to settle at startup
+
     try:
         while True:
             v_a0, v_a1 = read_both(bus)
