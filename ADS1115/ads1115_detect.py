@@ -66,8 +66,9 @@ CALIBRATION = {
     "PTT":   (0.5623, 0.5416),
 }
 
-# Tolerance in volts — how close a reading needs to be to match
-TOLERANCE = 0.008
+# Maximum Euclidean distance to consider a valid match
+# Prevents false matches when readings fall between calibration points
+MAX_DISTANCE = 0.020
 
 # Number of consecutive consistent readings to confirm a button press
 DEBOUNCE_COUNT = 3
@@ -90,13 +91,19 @@ def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
-# Button matching
+# Button matching - nearest neighbor with max distance threshold
 # =============================================================================
 def match_button(v_a0, v_a1):
+    best_button = None
+    best_distance = MAX_DISTANCE
+
     for button, (cal_a0, cal_a1) in CALIBRATION.items():
-        if abs(v_a0 - cal_a0) <= TOLERANCE and abs(v_a1 - cal_a1) <= TOLERANCE:
-            return button
-    return None
+        distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
+        if distance < best_distance:
+            best_distance = distance
+            best_button = button
+
+    return best_button
 
 # =============================================================================
 # Main detection loop
