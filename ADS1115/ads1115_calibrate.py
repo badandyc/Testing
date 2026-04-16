@@ -5,13 +5,12 @@
 #
 # Features:
 #   - Per-axis std (A0_std, A1_std) with std floor
-#   - Covariance (COV) for true 2D Mahalanobis distance
-#   - Outlier rejection (2.5 sigma, stats recomputed after)
+#   - Full 2x2 covariance with clamping (prevents singular matrix)
+#   - Pair-preserving outlier rejection (preserves A0/A1 pairing for correct COV)
 #   - Drift detection during sampling
 #   - Proper IDLE collection (50 samples)
 #   - Cluster separation and cluster size sanity checks
 #   - PTT std cap
-#   - Full precision internally, rounded for output/file
 #   - ~125Hz sample rate
 #
 # Output format:
@@ -50,13 +49,14 @@ COMP_DISABLE    = 0x0003
 # Calibration parameters
 # =============================================================================
 SAMPLES_REQUIRED  = 50
-STD_FLOOR         = 0.0015   # minimum std per axis
-OUTLIER_SIGMA     = 2.5      # reject samples beyond this many std devs
-PTT_MAX_STD       = 0.050    # cap PTT std
-CLUSTER_WARN_DIST = 0.005    # warn if buttons closer than this (V)
-CLUSTER_SIZE_WARN = 0.020    # warn if cluster spread exceeds this
-DRIFT_THRESHOLD   = 0.010    # warn if last-10-sample range exceeds this
-SAMPLE_INTERVAL   = 0.008    # ~125Hz
+STD_FLOOR         = 0.0015
+OUTLIER_SIGMA     = 2.5
+COV_CLAMP_FACTOR  = 0.95     # clamp cov to ±0.95 * s_a0 * s_a1
+PTT_MAX_STD       = 0.050
+CLUSTER_WARN_DIST = 0.005
+CLUSTER_SIZE_WARN = 0.020
+DRIFT_THRESHOLD   = 0.010
+SAMPLE_INTERVAL   = 0.008
 
 # =============================================================================
 # Button list
@@ -86,9 +86,7 @@ def read_voltage(bus, mux):
     return raw * 4.096 / 32767.0
 
 def read_both(bus):
-    v_a0 = read_voltage(bus, MUX_A0_GND)
-    v_a1 = read_voltage(bus, MUX_A1_GND)
-    return v_a0, v_a1
+    return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
 # Stats helpers
@@ -99,46 +97,44 @@ def mean(samples):
 def std(samples, avg):
     return (sum((x - avg) ** 2 for x in samples) / len(samples)) ** 0.5
 
-def covariance(samples_a0, samples_a1, avg_a0, avg_a1):
-    return sum(
-        (x - avg_a0) * (y - avg_a1)
-        for x, y in zip(samples_a0, samples_a1)
-    ) / len(samples_a0)
-
-def reject_outliers(samples, avg, std_dev):
-    if std_dev < STD_FLOOR:
-        return samples
-    return [x for x in samples if abs(x - avg) <= OUTLIER_SIGMA * std_dev]
-
 def compute_stats(samples_a0, samples_a1):
-    # First pass
+    # First pass stats
     avg_a0 = mean(samples_a0)
     avg_a1 = mean(samples_a1)
     s_a0   = std(samples_a0, avg_a0)
     s_a1   = std(samples_a1, avg_a1)
 
-    # Reject outliers
-    clean_a0 = reject_outliers(samples_a0, avg_a0, s_a0)
-    clean_a1 = reject_outliers(samples_a1, avg_a1, s_a1)
+    # Pair-preserving outlier rejection
+    clean_pairs = [
+        (a0, a1)
+        for a0, a1 in zip(samples_a0, samples_a1)
+        if (abs(a0 - avg_a0) <= OUTLIER_SIGMA * max(s_a0, STD_FLOOR) and
+            abs(a1 - avg_a1) <= OUTLIER_SIGMA * max(s_a1, STD_FLOOR))
+    ]
 
-    # Use shorter of the two to keep pairs aligned
-    min_len = min(len(clean_a0), len(clean_a1))
-    if min_len < 5:
-        clean_a0 = samples_a0
-        clean_a1 = samples_a1
-        min_len  = len(samples_a0)
+    if len(clean_pairs) < 5:
+        clean_pairs = list(zip(samples_a0, samples_a1))
 
-    clean_a0 = clean_a0[:min_len]
-    clean_a1 = clean_a1[:min_len]
+    clean_a0 = [p[0] for p in clean_pairs]
+    clean_a1 = [p[1] for p in clean_pairs]
 
-    # Recompute final stats
+    # Recompute final stats on clean pairs
     avg_a0 = mean(clean_a0)
     avg_a1 = mean(clean_a1)
     s_a0   = max(std(clean_a0, avg_a0), STD_FLOOR)
     s_a1   = max(std(clean_a1, avg_a1), STD_FLOOR)
-    cov    = covariance(clean_a0, clean_a1, avg_a0, avg_a1)
 
-    return avg_a0, avg_a1, s_a0, s_a1, cov, clean_a0, clean_a1
+    # Covariance from clean pairs
+    cov = sum(
+        (x - avg_a0) * (y - avg_a1)
+        for x, y in clean_pairs
+    ) / len(clean_pairs)
+
+    # Clamp covariance to prevent near-singular matrix
+    max_cov = COV_CLAMP_FACTOR * s_a0 * s_a1
+    cov = max(min(cov, max_cov), -max_cov)
+
+    return avg_a0, avg_a1, s_a0, s_a1, cov
 
 # =============================================================================
 # Collect samples for one button
@@ -150,8 +146,8 @@ def collect_button(bus, button, prompt=True):
         print(f"  Collecting idle samples — do NOT press anything...")
 
     print(f"  Collecting {SAMPLES_REQUIRED} samples — keep holding...")
-    samples_a0 = []
-    samples_a1 = []
+    samples_a0   = []
+    samples_a1   = []
     drift_warned = False
 
     while len(samples_a0) < SAMPLES_REQUIRED:
@@ -160,22 +156,22 @@ def collect_button(bus, button, prompt=True):
         samples_a1.append(v_a1)
         print(f"    {len(samples_a0)}/{SAMPLES_REQUIRED}  A0={v_a0:.4f}V  A1={v_a1:.4f}V", end="\r")
 
-        # Drift detection on last 10 samples
         if len(samples_a0) >= 10 and not drift_warned:
             recent_a0 = samples_a0[-10:]
             recent_a1 = samples_a1[-10:]
             drift_a0  = max(recent_a0) - min(recent_a0)
             drift_a1  = max(recent_a1) - min(recent_a1)
             if drift_a0 > DRIFT_THRESHOLD or drift_a1 > DRIFT_THRESHOLD:
-                print(f"\n    WARNING: signal drifting (A0 range={drift_a0:.4f}V, A1 range={drift_a1:.4f}V) — hold more steadily")
+                print(f"\n    WARNING: signal drifting (A0={drift_a0:.4f}V, A1={drift_a1:.4f}V) — hold more steadily")
                 drift_warned = True
 
-    avg_a0, avg_a1, s_a0, s_a1, cov, _, _ = compute_stats(samples_a0, samples_a1)
+    avg_a0, avg_a1, s_a0, s_a1, cov = compute_stats(samples_a0, samples_a1)
 
-    # Cap PTT std
     if button == "PTT":
         s_a0 = min(s_a0, PTT_MAX_STD)
         s_a1 = min(s_a1, PTT_MAX_STD)
+        max_cov = COV_CLAMP_FACTOR * s_a0 * s_a1
+        cov = max(min(cov, max_cov), -max_cov)
 
     print(f"    Done.                                              ")
     print(f"    A0 avg={avg_a0:.4f}V  std={s_a0:.4f}V")
@@ -224,18 +220,17 @@ def check_cluster_size(calibration):
 # Main
 # =============================================================================
 def main():
-    bus          = smbus2.SMBus(BUS)
-    calibration  = {}
+    bus         = smbus2.SMBus(BUS)
+    calibration = {}
 
     print("=" * 60)
     print("  MH-48 Button Matrix Calibration")
     print("  ADS1115 @ 0x48, bus 1")
-    print(f"  Samples: {SAMPLES_REQUIRED}  |  Outlier rejection: {OUTLIER_SIGMA}σ")
-    print(f"  Std floor: {STD_FLOOR}V  |  Sample rate: {int(1/SAMPLE_INTERVAL)}Hz")
+    print(f"  Samples: {SAMPLES_REQUIRED}  |  Outlier rejection: {OUTLIER_SIGMA}σ (pair-preserving)")
+    print(f"  Std floor: {STD_FLOOR}V  |  COV clamp: {COV_CLAMP_FACTOR}  |  Rate: {int(1/SAMPLE_INTERVAL)}Hz")
     print("=" * 60)
     print()
 
-    # IDLE — full collection
     avg_a0, avg_a1, s_a0, s_a1, cov = collect_button(bus, "IDLE", prompt=False)
     calibration["IDLE"] = {"A0": avg_a0, "A1": avg_a1, "STD_A0": s_a0, "STD_A1": s_a1, "COV": cov}
 
@@ -257,7 +252,6 @@ def main():
     check_separation(calibration)
     check_cluster_size(calibration)
 
-    # Save to file
     outfile = "/home/birddog/ads1115_calibration.txt"
     with open(outfile, "w") as f:
         f.write(f"{'Button':<6} {'A0_avg':>8} {'A1_avg':>8} {'A0_std':>8} {'A1_std':>8} {'COV':>10}\n")
