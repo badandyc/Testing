@@ -4,28 +4,16 @@
 # MH-48 handset button detector using ADS1115 ADC
 #
 # Detection method:
-#   - True per-axis Mahalanobis distance using A0_std and A1_std from calibration
-#   - Pure Mahalanobis rejection threshold (no mixed distance systems)
-#   - Explicit IDLE detection first before any button matching
-#   - No axis scaling (redundant with per-axis std normalization)
+#   - Full 2x2 covariance Mahalanobis distance
+#   - Explicit IDLE detection first
+#   - Pure single distance system throughout
 #   - Centroid smoothing (5-sample rolling average)
-#   - UP/DOWN special handling: tighter threshold + A1 consistency check + higher debounce
-#
-# Two modes:
-#   monitor - continuous monitoring mode (default)
-#   verify  - guided verification, prompts for each button and shows detection
+#   - UP/DOWN: tighter threshold + A1 consistency check + higher debounce
 #
 # Reads calibration from /home/birddog/ads1115_calibration.txt
-# Run: dtmf calibrate
-#
-# ADS1115 I2C address: 0x48, bus: 1
-# MH-48 powered at 5V (GPIO Pin 4)
-# SW1 -> ADS1115 A0
-# SW2 -> ADS1115 A1
+# Format: Button  A0_avg  A1_avg  A0_std  A1_std  COV
 #
 # Usage:
-#   python3 ads1115_detect.py           # monitor mode
-#   python3 ads1115_detect.py verify    # guided verification mode
 #   dtmf detect
 #   dtmf detect verify
 # =============================================================================
@@ -58,23 +46,15 @@ CALIBRATION_FILE = "/home/birddog/ads1115_calibration.txt"
 # =============================================================================
 # Detection parameters
 # =============================================================================
-# Mahalanobis rejection thresholds
-# ~1.0 = very close, ~2.5 = reasonable boundary, ~3.0 = likely wrong cluster
-MAX_MAHAL           = 2.5    # standard buttons
-UPDOWN_MAX_MAHAL    = 3.0    # UP/DOWN are noisy — allow slightly more
-IDLE_WINDOW         = 0.05   # explicit IDLE check window (V)
+MAX_MAHAL           = 2.5    # rejection threshold for standard buttons
+UPDOWN_MAX_MAHAL    = 3.0    # UP/DOWN are noisier
+IDLE_WINDOW         = 0.05   # explicit IDLE proximity check (V)
+UPDOWN_A1_TOLERANCE = 0.002  # UP/DOWN A1 consistency check
 
-# Debounce
 DEBOUNCE_COUNT      = 3
 UPDOWN_DEBOUNCE     = 6
-
-# Smoothing
 SMOOTH_WINDOW       = 5
 
-# UP/DOWN A1 consistency check — UP and DOWN mainly differ on A1
-UPDOWN_A1_TOLERANCE = 0.002
-
-# Button list for verify mode
 BUTTONS = [
     "1", "2", "3", "A",
     "4", "5", "6", "B",
@@ -85,8 +65,8 @@ BUTTONS = [
 ]
 
 # =============================================================================
-# Load calibration from file
-# New format: Button  A0_avg  A1_avg  A0_std  A1_std
+# Load calibration
+# Format: Button  A0_avg  A1_avg  A0_std  A1_std  COV
 # =============================================================================
 def load_calibration(filepath):
     calibration = {}
@@ -97,14 +77,15 @@ def load_calibration(filepath):
                 if not line or line.startswith("-") or line.startswith("Button"):
                     continue
                 parts = line.split()
-                if len(parts) != 5:
+                if len(parts) != 6:
                     continue
-                button  = parts[0]
-                a0      = float(parts[1].rstrip("V"))
-                a1      = float(parts[2].rstrip("V"))
-                std_a0  = float(parts[3].rstrip("V"))
-                std_a1  = float(parts[4].rstrip("V"))
-                calibration[button] = (a0, a1, std_a0, std_a1)
+                button = parts[0]
+                a0     = float(parts[1].rstrip("V"))
+                a1     = float(parts[2].rstrip("V"))
+                s_a0   = float(parts[3].rstrip("V"))
+                s_a1   = float(parts[4].rstrip("V"))
+                cov    = float(parts[5])
+                calibration[button] = (a0, a1, s_a0, s_a1, cov)
         print(f"  Loaded {len(calibration)} entries from {filepath}")
     except FileNotFoundError:
         print(f"ERROR: Calibration file not found: {filepath}")
@@ -119,7 +100,7 @@ def read_voltage(bus, mux):
     config = OS_SINGLE | mux | PGA_4096 | MODE_SINGLE | DR_128SPS | COMP_DISABLE
     config_bytes = [(config >> 8) & 0xFF, config & 0xFF]
     bus.write_i2c_block_data(ADS1115_ADDR, REG_CONFIG, config_bytes)
-    time.sleep(0.008)
+    time.sleep(0.004)
     data = bus.read_i2c_block_data(ADS1115_ADDR, REG_CONVERT, 2)
     raw = (data[0] << 8) | data[1]
     if raw > 32767:
@@ -142,28 +123,55 @@ def get_smoothed(bus):
     return avg_a0, avg_a1
 
 # =============================================================================
-# Button matching — true per-axis Mahalanobis, one distance system throughout
+# Full covariance Mahalanobis distance
+#
+# For 2x2 covariance matrix:
+#   Sigma = [[var_a0,  cov   ],
+#            [cov,     var_a1]]
+#
+# Inverse of Sigma:
+#   det = var_a0 * var_a1 - cov^2
+#   Sigma_inv = (1/det) * [[var_a1, -cov  ],
+#                           [-cov,   var_a0]]
+#
+# Mahalanobis^2 = d^T * Sigma_inv * d
+#   where d = [v_a0 - cal_a0, v_a1 - cal_a1]
+# =============================================================================
+def mahalanobis(v_a0, v_a1, cal_a0, cal_a1, s_a0, s_a1, cov):
+    var_a0 = s_a0 ** 2
+    var_a1 = s_a1 ** 2
+    det    = var_a0 * var_a1 - cov ** 2
+
+    if abs(det) < 1e-12:
+        # Degenerate matrix — fall back to independent axes
+        d0 = (v_a0 - cal_a0) / s_a0
+        d1 = (v_a1 - cal_a1) / s_a1
+        return math.sqrt(d0 ** 2 + d1 ** 2)
+
+    d0 = v_a0 - cal_a0
+    d1 = v_a1 - cal_a1
+
+    m2 = (var_a1 * d0 ** 2 - 2 * cov * d0 * d1 + var_a0 * d1 ** 2) / det
+    return math.sqrt(abs(m2))
+
+# =============================================================================
+# Button matching
 # =============================================================================
 def match_button(v_a0, v_a1, calibration):
-    # Step 1: explicit IDLE check first
+    # Step 1: explicit IDLE check
     if "IDLE" in calibration:
-        idle_a0, idle_a1, idle_std_a0, idle_std_a1 = calibration["IDLE"]
+        idle_a0, idle_a1, _, _, _ = calibration["IDLE"]
         if abs(v_a0 - idle_a0) < IDLE_WINDOW and abs(v_a1 - idle_a1) < IDLE_WINDOW:
             return "IDLE", 0.0
 
-    # Step 2: find nearest button using per-axis Mahalanobis distance
-    best_button  = None
+    # Step 2: nearest neighbor by Mahalanobis distance
+    best_button   = None
     best_distance = float('inf')
 
-    for button, (cal_a0, cal_a1, std_a0, std_a1) in calibration.items():
+    for button, (cal_a0, cal_a1, s_a0, s_a1, cov) in calibration.items():
         if button == "IDLE":
             continue
-
-        distance = math.sqrt(
-            ((v_a0 - cal_a0) / std_a0) ** 2 +
-            ((v_a1 - cal_a1) / std_a1) ** 2
-        )
-
+        distance = mahalanobis(v_a0, v_a1, cal_a0, cal_a1, s_a0, s_a1, cov)
         if distance < best_distance:
             best_distance = distance
             best_button   = button
@@ -171,11 +179,10 @@ def match_button(v_a0, v_a1, calibration):
     if best_button is None:
         return "IDLE", 0.0
 
-    # Step 3: Mahalanobis rejection threshold
+    # Step 3: rejection threshold
     if best_button in ["UP", "DOWN"]:
         if best_distance > UPDOWN_MAX_MAHAL:
             return "IDLE", best_distance
-        # Additional A1 consistency check for UP/DOWN
         cal_a1 = calibration[best_button][1]
         if abs(v_a1 - cal_a1) > UPDOWN_A1_TOLERANCE:
             return "IDLE", best_distance
@@ -196,8 +203,8 @@ def monitor_mode(bus, calibration):
     print("=" * 50)
     print()
 
-    last_confirmed = None
-    candidate      = None
+    last_confirmed  = None
+    candidate       = None
     candidate_count = 0
 
     time.sleep(0.5)
@@ -251,7 +258,7 @@ def verify_mode(bus, calibration):
             detections.append((detected, distance, v_a0, v_a1))
             time.sleep(0.05)
 
-        counts = {}
+        counts      = {}
         for d, _, _, _ in detections:
             counts[d] = counts.get(d, 0) + 1
         most_common = max(counts, key=counts.get)
@@ -271,9 +278,9 @@ def verify_mode(bus, calibration):
 # Main
 # =============================================================================
 def main():
-    bus        = smbus2.SMBus(BUS)
+    bus         = smbus2.SMBus(BUS)
     calibration = load_calibration(CALIBRATION_FILE)
-    mode       = sys.argv[1] if len(sys.argv) > 1 else "monitor"
+    mode        = sys.argv[1] if len(sys.argv) > 1 else "monitor"
 
     if mode == "verify":
         verify_mode(bus, calibration)
