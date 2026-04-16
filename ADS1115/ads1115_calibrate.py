@@ -4,7 +4,8 @@
 # MH-48 handset button matrix calibration script
 #
 # Collects 50 samples per button for accurate reference values.
-# Hold the button until enough samples are collected, then release.
+# Outputs per-button tolerance based on 3x standard deviation.
+# Hold the button, hit Enter, keep holding until collection complete.
 #
 # ADS1115 I2C address: 0x48, bus: 1
 # MH-48 powered at 5V (GPIO Pin 4)
@@ -36,6 +37,8 @@ DR_128SPS       = 0x0080
 COMP_DISABLE    = 0x0003
 
 SAMPLES_REQUIRED = 50
+STD_MULTIPLIER   = 3      # tolerance = max(std_a0, std_a1) * STD_MULTIPLIER
+MIN_TOLERANCE    = 0.005  # floor tolerance in volts
 
 # =============================================================================
 # ADS1115 read
@@ -53,6 +56,9 @@ def read_voltage(bus, mux):
 
 def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
+
+def std(samples, avg):
+    return (sum((x - avg) ** 2 for x in samples) / len(samples)) ** 0.5
 
 # =============================================================================
 # Button list
@@ -80,22 +86,23 @@ def collect_button(bus, button):
         v_a0, v_a1 = read_both(bus)
         samples_a0.append(v_a0)
         samples_a1.append(v_a1)
-        collected = len(samples_a0)
-        print(f"    {collected}/{SAMPLES_REQUIRED}  A0={v_a0:.4f}V  A1={v_a1:.4f}V", end="\r")
+        print(f"    {len(samples_a0)}/{SAMPLES_REQUIRED}  A0={v_a0:.4f}V  A1={v_a1:.4f}V", end="\r")
         time.sleep(0.02)
 
     avg_a0 = sum(samples_a0) / len(samples_a0)
     avg_a1 = sum(samples_a1) / len(samples_a1)
-    std_a0 = (sum((x - avg_a0) ** 2 for x in samples_a0) / len(samples_a0)) ** 0.5
-    std_a1 = (sum((x - avg_a1) ** 2 for x in samples_a1) / len(samples_a1)) ** 0.5
+    std_a0 = std(samples_a0, avg_a0)
+    std_a1 = std(samples_a1, avg_a1)
+    tolerance = max(max(std_a0, std_a1) * STD_MULTIPLIER, MIN_TOLERANCE)
 
     print(f"    Done.                                          ")
     print(f"    A0 avg={avg_a0:.4f}V  std={std_a0:.4f}V")
     print(f"    A1 avg={avg_a1:.4f}V  std={std_a1:.4f}V")
+    print(f"    Tolerance: {tolerance:.4f}V")
     input("    Release button and press Enter to continue...")
     print()
 
-    return round(avg_a0, 4), round(avg_a1, 4)
+    return round(avg_a0, 4), round(avg_a1, 4), round(tolerance, 4)
 
 # =============================================================================
 # Main calibration loop
@@ -108,6 +115,7 @@ def main():
     print("  MH-48 Button Matrix Calibration")
     print("  ADS1115 @ 0x48, bus 1")
     print(f"  Samples per button: {SAMPLES_REQUIRED}")
+    print(f"  Tolerance: {STD_MULTIPLIER}x std dev (min {MIN_TOLERANCE}V)")
     print("=" * 50)
     print()
 
@@ -117,31 +125,40 @@ def main():
     idle_a0, idle_a1 = read_both(bus)
     print(f"  Idle A0 (SW1): {idle_a0:.4f}V")
     print(f"  Idle A1 (SW2): {idle_a1:.4f}V")
-    calibration["IDLE"] = {"A0": round(idle_a0, 4), "A1": round(idle_a1, 4)}
+    calibration["IDLE"] = {"A0": round(idle_a0, 4), "A1": round(idle_a1, 4), "TOL": 0.020}
     print()
 
     for button in BUTTONS:
-        avg_a0, avg_a1 = collect_button(bus, button)
-        calibration[button] = {"A0": avg_a0, "A1": avg_a1}
+        avg_a0, avg_a1, tolerance = collect_button(bus, button)
+        calibration[button] = {"A0": avg_a0, "A1": avg_a1, "TOL": tolerance}
 
     bus.close()
 
-    print("=" * 50)
+    print("=" * 60)
     print("  Calibration Complete")
-    print("=" * 50)
+    print("=" * 60)
     print()
-    print(f"  {'Button':<6} {'A0 (SW1)':>10} {'A1 (SW2)':>10}")
-    print(f"  {'-'*6} {'-'*10} {'-'*10}")
-    for button, values in calibration.items():
-        print(f"  {button:<6} {values['A0']:>10.4f}V {values['A1']:>10.4f}V")
+    print(f"  {'Button':<6} {'A0 (SW1)':>10} {'A1 (SW2)':>10} {'Tolerance':>10}")
+    print(f"  {'-'*6} {'-'*10} {'-'*10} {'-'*10}")
+    for button, v in calibration.items():
+        print(f"  {button:<6} {v['A0']:>10.4f}V {v['A1']:>10.4f}V {v['TOL']:>10.4f}V")
 
+    # Save results
     outfile = "/home/birddog/ads1115_calibration.txt"
     with open(outfile, "w") as f:
-        f.write(f"{'Button':<6} {'A0 (SW1)':>10} {'A1 (SW2)':>10}\n")
-        f.write(f"{'-'*6} {'-'*10} {'-'*10}\n")
-        for button, values in calibration.items():
-            f.write(f"{button:<6} {values['A0']:>10.4f}V {values['A1']:>10.4f}V\n")
+        f.write(f"{'Button':<6} {'A0 (SW1)':>10} {'A1 (SW2)':>10} {'Tolerance':>10}\n")
+        f.write(f"{'-'*6} {'-'*10} {'-'*10} {'-'*10}\n")
+        for button, v in calibration.items():
+            f.write(f"{button:<6} {v['A0']:>10.4f}V {v['A1']:>10.4f}V {v['TOL']:>10.4f}V\n")
 
+    # Output Python dict for copy-paste into detect script
+    print()
+    print("  Copy this into ads1115_detect.py CALIBRATION dict:")
+    print()
+    print("CALIBRATION = {")
+    for button, v in calibration.items():
+        print(f'    "{button}":{" " * (5 - len(button))}({v["A0"]}, {v["A1"]}, {v["TOL"]}),')
+    print("}")
     print()
     print(f"Saved to {outfile}")
 
