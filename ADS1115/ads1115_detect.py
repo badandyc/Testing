@@ -187,9 +187,8 @@ def verify_mode(bus, calibration):
 
         match = "✓" if most_common == button else "✗"
         print(f"  Expected [{button}] → Detected [{most_common}]  {match}  confidence={confidence:.0f}%")
-        if most_common != button:
-            sample = detections[0]
-            print(f"    A0={sample[2]:.4f}V  A1={sample[3]:.4f}V  dist={sample[1]:.4f}")
+        sample = detections[0]
+        print(f"    A0={sample[2]:.4f}V  A1={sample[3]:.4f}V  dist={sample[1]:.4f}")
         results[button] = most_common == button
         print()
 
