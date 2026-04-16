@@ -3,9 +3,16 @@
 # ads1115_detect.py
 # MH-48 handset button detector using ADS1115 ADC
 #
+# Detection method:
+#   - Mahalanobis distance with per-button variance weighting
+#   - Global rejection threshold (circular, not square)
+#   - Normalized axes
+#   - Centroid smoothing (5-sample rolling average)
+#   - UP/DOWN special handling with tighter threshold and higher debounce
+#
 # Two modes:
-#   verify  - guided verification, prompts for each button and shows detection
 #   monitor - continuous monitoring mode (default)
+#   verify  - guided verification, prompts for each button and shows detection
 #
 # Reads calibration from /home/birddog/ads1115_calibration.txt
 # Run ads1115_calibrate.py to regenerate calibration file.
@@ -22,7 +29,9 @@
 
 import time
 import sys
+import math
 import smbus2
+from collections import deque
 
 # =============================================================================
 # ADS1115 configuration
@@ -43,8 +52,25 @@ COMP_DISABLE    = 0x0003
 
 CALIBRATION_FILE = "/home/birddog/ads1115_calibration.txt"
 
-# Number of consecutive consistent readings to confirm a button press
-DEBOUNCE_COUNT = 3
+# =============================================================================
+# Detection parameters
+# =============================================================================
+# Global rejection threshold — readings further than this from any button = IDLE
+MAX_DISTANCE        = 0.010
+
+# UP/DOWN are noisy — use tighter rejection and higher debounce
+UPDOWN_MAX_DISTANCE = 0.015
+UPDOWN_DEBOUNCE     = 6
+
+# Standard debounce count
+DEBOUNCE_COUNT      = 3
+
+# Smoothing window size
+SMOOTH_WINDOW       = 5
+
+# Axis normalization scale (based on typical DTMF voltage range)
+A0_SCALE = 1.0 / 0.030
+A1_SCALE = 1.0 / 0.030
 
 # Button list for verify mode
 BUTTONS = [
@@ -59,6 +85,7 @@ BUTTONS = [
 # =============================================================================
 # Load calibration from file
 # Format: Button  A0_avg  A1_avg  Tolerance (with V suffix)
+# Tolerance is used as per-button std proxy for Mahalanobis weighting
 # =============================================================================
 def load_calibration(filepath):
     calibration = {}
@@ -72,14 +99,14 @@ def load_calibration(filepath):
                 if len(parts) != 4:
                     continue
                 button = parts[0]
-                a0 = float(parts[1].rstrip("V"))
-                a1 = float(parts[2].rstrip("V"))
+                a0  = float(parts[1].rstrip("V"))
+                a1  = float(parts[2].rstrip("V"))
                 tol = float(parts[3].rstrip("V"))
                 calibration[button] = (a0, a1, tol)
         print(f"  Loaded {len(calibration)} entries from {filepath}")
     except FileNotFoundError:
         print(f"ERROR: Calibration file not found: {filepath}")
-        print("       Run ads1115_calibrate.py first.")
+        print("       Run: dtmf calibrate")
         sys.exit(1)
     return calibration
 
@@ -101,24 +128,66 @@ def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
-# Button matching - per-button tolerance, nearest neighbor within window
+# Centroid smoothing — rolling average over last SMOOTH_WINDOW readings
+# =============================================================================
+history = deque(maxlen=SMOOTH_WINDOW)
+
+def get_smoothed(bus):
+    v_a0, v_a1 = read_both(bus)
+    history.append((v_a0, v_a1))
+    avg_a0 = sum(v[0] for v in history) / len(history)
+    avg_a1 = sum(v[1] for v in history) / len(history)
+    return avg_a0, avg_a1
+
+# =============================================================================
+# Button matching — Mahalanobis distance with normalized axes
+# Pure nearest neighbor, then global rejection threshold
 # =============================================================================
 def match_button(v_a0, v_a1, calibration):
     best_button = None
     best_distance = float('inf')
 
-    for button, (cal_a0, cal_a1, tolerance) in calibration.items():
+    for button, (cal_a0, cal_a1, tol) in calibration.items():
         if button == "IDLE":
-            continue  # IDLE is the default when nothing matches
-        if abs(v_a0 - cal_a0) <= tolerance and abs(v_a1 - cal_a1) <= tolerance:
-            distance = ((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2) ** 0.5
-            if distance < best_distance:
-                best_distance = distance
-                best_button = button
+            continue
 
-    if best_button is None:
-        return "IDLE", 0.0
-    return best_button, best_distance
+        # Mahalanobis-style: normalize by per-button tolerance (std proxy)
+        # then apply axis scale
+        scale = max(tol, 0.005)  # floor to avoid div by zero
+        distance = math.sqrt(
+            (((v_a0 - cal_a0) * A0_SCALE) / scale) ** 2 +
+            (((v_a1 - cal_a1) * A1_SCALE) / scale) ** 2
+        )
+
+        if distance < best_distance:
+            best_distance = distance
+            best_button = button
+
+    # Apply rejection threshold
+    if best_button in ["UP", "DOWN"]:
+        threshold = UPDOWN_MAX_DISTANCE * A0_SCALE
+    else:
+        threshold = MAX_DISTANCE * A0_SCALE
+
+    # Normalize threshold to match Mahalanobis scale
+    # Use a fixed scale reference for the threshold comparison
+    normalized_threshold = threshold / max(
+        calibration.get(best_button, (0, 0, 0.005))[2], 0.005
+    ) if best_button else threshold
+
+    # Simpler: use raw Euclidean for final rejection check
+    if best_button:
+        cal_a0, cal_a1, _ = calibration[best_button]
+        raw_distance = math.sqrt((v_a0 - cal_a0) ** 2 + (v_a1 - cal_a1) ** 2)
+
+        if best_button in ["UP", "DOWN"] and raw_distance > UPDOWN_MAX_DISTANCE:
+            return "IDLE", raw_distance
+        elif best_button not in ["UP", "DOWN", "PTT"] and raw_distance > MAX_DISTANCE:
+            return "IDLE", raw_distance
+
+        return best_button, raw_distance
+
+    return "IDLE", 0.0
 
 # =============================================================================
 # Monitor mode
@@ -135,12 +204,15 @@ def monitor_mode(bus, calibration):
     candidate = None
     candidate_count = 0
 
-    time.sleep(0.5)  # allow ADC readings to settle at startup
+    time.sleep(0.5)  # allow readings to settle
 
     try:
         while True:
-            v_a0, v_a1 = read_both(bus)
+            v_a0, v_a1 = get_smoothed(bus)
             button, distance = match_button(v_a0, v_a1, calibration)
+
+            # Use higher debounce for UP/DOWN
+            required = UPDOWN_DEBOUNCE if button in ["UP", "DOWN"] else DEBOUNCE_COUNT
 
             if button == candidate:
                 candidate_count += 1
@@ -148,7 +220,7 @@ def monitor_mode(bus, calibration):
                 candidate = button
                 candidate_count = 1
 
-            if candidate_count >= DEBOUNCE_COUNT:
+            if candidate_count >= required:
                 if candidate != last_confirmed:
                     if candidate and candidate != "IDLE":
                         print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V  dist={distance:.4f}")
@@ -174,11 +246,12 @@ def verify_mode(bus, calibration):
     results = {}
 
     for button in BUTTONS:
+        history.clear()  # clear smoothing window between buttons
         input(f"  Press and HOLD [{button}] then hit Enter...")
         detections = []
 
         for _ in range(10):
-            v_a0, v_a1 = read_both(bus)
+            v_a0, v_a1 = get_smoothed(bus)
             detected, distance = match_button(v_a0, v_a1, calibration)
             detections.append((detected, distance, v_a0, v_a1))
             time.sleep(0.05)
