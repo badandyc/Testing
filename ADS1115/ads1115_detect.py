@@ -4,11 +4,12 @@
 # MH-48 handset button detector using ADS1115 ADC
 #
 # Detection method:
-#   - Full 2x2 covariance Mahalanobis distance
-#   - Explicit IDLE detection first
-#   - Pure single distance system throughout
-#   - Centroid smoothing (5-sample rolling average)
-#   - UP/DOWN: tighter threshold + A1 consistency check + higher debounce
+#   - Full 2x2 covariance Mahalanobis distance throughout (one system)
+#   - Mahalanobis for IDLE detection (not square window)
+#   - Determinant floor instead of hard fallback
+#   - Smoothing window warm-up (no classification until buffer full)
+#   - UP/DOWN: A1 tolerance scaled by std, higher debounce
+#   - Confidence score output (exp(-0.5 * dist^2))
 #
 # Reads calibration from /home/birddog/ads1115_calibration.txt
 # Format: Button  A0_avg  A1_avg  A0_std  A1_std  COV
@@ -46,10 +47,11 @@ CALIBRATION_FILE = "/home/birddog/ads1115_calibration.txt"
 # =============================================================================
 # Detection parameters
 # =============================================================================
-MAX_MAHAL           = 2.5    # rejection threshold for standard buttons
+MAX_MAHAL           = 2.5    # rejection threshold — standard buttons
 UPDOWN_MAX_MAHAL    = 3.0    # UP/DOWN are noisier
-IDLE_WINDOW         = 0.05   # explicit IDLE proximity check (V)
-UPDOWN_A1_TOLERANCE = 0.002  # UP/DOWN A1 consistency check
+IDLE_MAX_MAHAL      = 2.5    # IDLE Mahalanobis threshold
+UPDOWN_A1_STD_MULT  = 2.0    # UP/DOWN A1 consistency: reject if > N * s_a1
+DET_FLOOR           = 1e-10  # determinant floor — prevents fallback discontinuity
 
 DEBOUNCE_COUNT      = 3
 UPDOWN_DEBOUNCE     = 6
@@ -111,7 +113,7 @@ def read_both(bus):
     return read_voltage(bus, MUX_A0_GND), read_voltage(bus, MUX_A1_GND)
 
 # =============================================================================
-# Centroid smoothing
+# Centroid smoothing with warm-up guard
 # =============================================================================
 history = deque(maxlen=SMOOTH_WINDOW)
 
@@ -122,31 +124,26 @@ def get_smoothed(bus):
     avg_a1 = sum(v[1] for v in history) / len(history)
     return avg_a0, avg_a1
 
+def buffer_ready():
+    return len(history) >= SMOOTH_WINDOW
+
 # =============================================================================
 # Full covariance Mahalanobis distance
 #
-# For 2x2 covariance matrix:
-#   Sigma = [[var_a0,  cov   ],
-#            [cov,     var_a1]]
+# Sigma = [[var_a0,  cov  ],
+#          [cov,   var_a1 ]]
 #
-# Inverse of Sigma:
-#   det = var_a0 * var_a1 - cov^2
-#   Sigma_inv = (1/det) * [[var_a1, -cov  ],
-#                           [-cov,   var_a0]]
+# det = var_a0 * var_a1 - cov^2  (floored to DET_FLOOR)
 #
-# Mahalanobis^2 = d^T * Sigma_inv * d
-#   where d = [v_a0 - cal_a0, v_a1 - cal_a1]
+# Sigma_inv = (1/det) * [[var_a1, -cov  ],
+#                         [-cov,  var_a0]]
+#
+# dist^2 = d^T * Sigma_inv * d
 # =============================================================================
 def mahalanobis(v_a0, v_a1, cal_a0, cal_a1, s_a0, s_a1, cov):
     var_a0 = s_a0 ** 2
     var_a1 = s_a1 ** 2
-    det    = var_a0 * var_a1 - cov ** 2
-
-    if abs(det) < 1e-12:
-        # Degenerate matrix — fall back to independent axes
-        d0 = (v_a0 - cal_a0) / s_a0
-        d1 = (v_a1 - cal_a1) / s_a1
-        return math.sqrt(d0 ** 2 + d1 ** 2)
+    det    = max(var_a0 * var_a1 - cov ** 2, DET_FLOOR)
 
     d0 = v_a0 - cal_a0
     d1 = v_a1 - cal_a1
@@ -154,14 +151,22 @@ def mahalanobis(v_a0, v_a1, cal_a0, cal_a1, s_a0, s_a1, cov):
     m2 = (var_a1 * d0 ** 2 - 2 * cov * d0 * d1 + var_a0 * d1 ** 2) / det
     return math.sqrt(abs(m2))
 
+def confidence(distance):
+    return math.exp(-0.5 * distance ** 2)
+
 # =============================================================================
-# Button matching
+# Button matching — pure Mahalanobis throughout
 # =============================================================================
 def match_button(v_a0, v_a1, calibration):
-    # Step 1: explicit IDLE check
+    # Warm-up guard
+    if not buffer_ready():
+        return "IDLE", 0.0
+
+    # Step 1: Mahalanobis IDLE check
     if "IDLE" in calibration:
-        idle_a0, idle_a1, _, _, _ = calibration["IDLE"]
-        if abs(v_a0 - idle_a0) < IDLE_WINDOW and abs(v_a1 - idle_a1) < IDLE_WINDOW:
+        idle_a0, idle_a1, s_a0, s_a1, cov = calibration["IDLE"]
+        idle_dist = mahalanobis(v_a0, v_a1, idle_a0, idle_a1, s_a0, s_a1, cov)
+        if idle_dist < IDLE_MAX_MAHAL:
             return "IDLE", 0.0
 
     # Step 2: nearest neighbor by Mahalanobis distance
@@ -179,12 +184,13 @@ def match_button(v_a0, v_a1, calibration):
     if best_button is None:
         return "IDLE", 0.0
 
-    # Step 3: rejection threshold
+    # Step 3: Mahalanobis rejection threshold
     if best_button in ["UP", "DOWN"]:
         if best_distance > UPDOWN_MAX_MAHAL:
             return "IDLE", best_distance
-        cal_a1 = calibration[best_button][1]
-        if abs(v_a1 - cal_a1) > UPDOWN_A1_TOLERANCE:
+        # A1 consistency check scaled by std
+        _, cal_a1, _, s_a1, _ = calibration[best_button]
+        if abs(v_a1 - cal_a1) > UPDOWN_A1_STD_MULT * s_a1:
             return "IDLE", best_distance
     else:
         if best_distance > MAX_MAHAL:
@@ -207,12 +213,16 @@ def monitor_mode(bus, calibration):
     candidate       = None
     candidate_count = 0
 
-    time.sleep(0.5)
+    # Pre-fill smoothing buffer
+    for _ in range(SMOOTH_WINDOW):
+        get_smoothed(bus)
+        time.sleep(0.02)
 
     try:
         while True:
             v_a0, v_a1 = get_smoothed(bus)
             button, distance = match_button(v_a0, v_a1, calibration)
+            conf = confidence(distance) if distance > 0 else 1.0
 
             required = UPDOWN_DEBOUNCE if button in ["UP", "DOWN"] else DEBOUNCE_COUNT
 
@@ -225,7 +235,7 @@ def monitor_mode(bus, calibration):
             if candidate_count >= required:
                 if candidate != last_confirmed:
                     if candidate and candidate != "IDLE":
-                        print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V  dist={distance:.3f}")
+                        print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V  dist={distance:.3f}  conf={conf:.2f}")
                     elif last_confirmed and last_confirmed != "IDLE":
                         print(f"  RELEASE: [{last_confirmed}]")
                     last_confirmed = candidate
@@ -250,22 +260,28 @@ def verify_mode(bus, calibration):
     for button in BUTTONS:
         history.clear()
         input(f"  Press and HOLD [{button}] then hit Enter...")
-        detections = []
 
+        # Pre-fill buffer
+        for _ in range(SMOOTH_WINDOW):
+            get_smoothed(bus)
+
+        detections = []
         for _ in range(10):
             v_a0, v_a1 = get_smoothed(bus)
             detected, distance = match_button(v_a0, v_a1, calibration)
-            detections.append((detected, distance, v_a0, v_a1))
+            conf = confidence(distance) if distance > 0 else 1.0
+            detections.append((detected, distance, v_a0, v_a1, conf))
             time.sleep(0.05)
 
         counts      = {}
-        for d, _, _, _ in detections:
+        for d, _, _, _, _ in detections:
             counts[d] = counts.get(d, 0) + 1
         most_common = max(counts, key=counts.get)
-        confidence  = counts[most_common] / len(detections) * 100
+        pct         = counts[most_common] / len(detections) * 100
+        avg_conf    = sum(d[4] for d in detections) / len(detections)
 
         match = "✓" if most_common == button else "✗"
-        print(f"  Expected [{button}] → Detected [{most_common}]  {match}  confidence={confidence:.0f}%")
+        print(f"  Expected [{button}] → Detected [{most_common}]  {match}  confidence={pct:.0f}%  avg_conf={avg_conf:.2f}")
         sample = detections[0]
         print(f"    A0={sample[2]:.4f}V  A1={sample[3]:.4f}V  dist={sample[1]:.3f}")
         results[button] = most_common == button
