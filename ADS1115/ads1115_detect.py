@@ -3,8 +3,9 @@
 # ads1115_detect.py
 # MH-48 handset button detector using ADS1115 ADC
 #
-# Reads A0 (SW1) and A1 (SW2) continuously and matches against
-# calibration table to identify button presses.
+# Two modes:
+#   verify  - guided verification, prompts for each button and shows detection
+#   monitor - continuous monitoring mode (default)
 #
 # ADS1115 I2C address: 0x48, bus: 1
 # MH-48 powered at 5V (GPIO Pin 4)
@@ -12,10 +13,12 @@
 # SW2 -> ADS1115 A1
 #
 # Usage:
-#   python3 ads1115_detect.py
+#   python3 ads1115_detect.py           # monitor mode
+#   python3 ads1115_detect.py verify    # guided verification mode
 # =============================================================================
 
 import time
+import sys
 import smbus2
 
 # =============================================================================
@@ -67,11 +70,20 @@ CALIBRATION = {
 }
 
 # Maximum Euclidean distance to consider a valid match
-# Prevents false matches when readings fall between calibration points
 MAX_DISTANCE = 0.020
 
 # Number of consecutive consistent readings to confirm a button press
 DEBOUNCE_COUNT = 3
+
+# Button list for verify mode
+BUTTONS = [
+    "1", "2", "3", "A",
+    "4", "5", "6", "B",
+    "7", "8", "9", "C",
+    "*", "0", "#", "D",
+    "P1", "P2", "P3", "P4",
+    "UP", "DOWN", "PTT"
+]
 
 # =============================================================================
 # ADS1115 read
@@ -103,29 +115,27 @@ def match_button(v_a0, v_a1):
             best_distance = distance
             best_button = button
 
-    return best_button
+    return best_button, best_distance
 
 # =============================================================================
-# Main detection loop
+# Monitor mode - continuous detection
 # =============================================================================
-def main():
-    bus = smbus2.SMBus(BUS)
-
+def monitor_mode(bus):
     print("=" * 50)
-    print("  MH-48 Button Detector")
+    print("  MH-48 Button Detector — Monitor Mode")
     print("  Press buttons on the handset")
     print("  Ctrl+C to exit")
     print("=" * 50)
     print()
 
-    try:
-        last_confirmed = None
-        candidate = None
-        candidate_count = 0
+    last_confirmed = None
+    candidate = None
+    candidate_count = 0
 
+    try:
         while True:
             v_a0, v_a1 = read_both(bus)
-            button = match_button(v_a0, v_a1)
+            button, distance = match_button(v_a0, v_a1)
 
             if button == candidate:
                 candidate_count += 1
@@ -136,7 +146,7 @@ def main():
             if candidate_count >= DEBOUNCE_COUNT:
                 if candidate != last_confirmed:
                     if candidate and candidate != "IDLE":
-                        print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V")
+                        print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V  dist={distance:.4f}")
                     elif last_confirmed and last_confirmed != "IDLE":
                         print(f"  RELEASE: [{last_confirmed}]")
                     last_confirmed = candidate
@@ -145,7 +155,61 @@ def main():
 
     except KeyboardInterrupt:
         print("\nExiting.")
-        bus.close()
+
+# =============================================================================
+# Verify mode - guided per-button verification
+# =============================================================================
+def verify_mode(bus):
+    print("=" * 50)
+    print("  MH-48 Button Detector — Verify Mode")
+    print("  Follow prompts to verify each button")
+    print("=" * 50)
+    print()
+
+    results = {}
+
+    for button in BUTTONS:
+        input(f"  Ready to test [{button}] — press Enter then press the button...")
+        detections = []
+
+        # Collect 10 readings while button is held
+        for _ in range(10):
+            v_a0, v_a1 = read_both(bus)
+            detected, distance = match_button(v_a0, v_a1)
+            detections.append((detected, distance, v_a0, v_a1))
+            time.sleep(0.05)
+
+        # Find most common detection
+        counts = {}
+        for d, _, _, _ in detections:
+            counts[d] = counts.get(d, 0) + 1
+        most_common = max(counts, key=counts.get)
+        confidence = counts[most_common] / len(detections) * 100
+
+        match = "✓" if most_common == button else "✗"
+        print(f"  Expected [{button}] → Detected [{most_common}]  {match}  confidence={confidence:.0f}%")
+        if most_common != button:
+            sample = detections[0]
+            print(f"    A0={sample[2]:.4f}V  A1={sample[3]:.4f}V  dist={sample[1]:.4f}")
+        results[button] = most_common == button
+        print()
+
+    passed = sum(1 for v in results.values() if v)
+    print(f"  Result: {passed}/{len(BUTTONS)} buttons correct")
+
+# =============================================================================
+# Main
+# =============================================================================
+def main():
+    bus = smbus2.SMBus(BUS)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "monitor"
+
+    if mode == "verify":
+        verify_mode(bus)
+    else:
+        monitor_mode(bus)
+
+    bus.close()
 
 if __name__ == "__main__":
     main()
