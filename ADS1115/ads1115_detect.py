@@ -169,7 +169,7 @@ def verify_mode(bus):
     results = {}
 
     for button in BUTTONS:
-        input(f"  Ready to test [{button}] — press Enter then press the button...")
+        input(f"  Press and HOLD [{button}] then hit Enter...")
         detections = []
 
         # Collect 10 readings while button is held
