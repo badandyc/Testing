@@ -1,0 +1,23 @@
+#!/bin/bash
+# dtmf - CLI for MH-48 handset DTMF button detection
+# Usage: dtmf calibrate
+#        dtmf detect
+#        dtmf detect verify
+
+CALIBRATE_SCRIPT="/home/birddog/ads1115_calibrate.py"
+DETECT_SCRIPT="/home/birddog/ads1115_detect.py"
+
+case "$1" in
+    calibrate)
+        python3 "${CALIBRATE_SCRIPT}"
+        ;;
+    detect)
+        python3 "${DETECT_SCRIPT}" "${2}"
+        ;;
+    *)
+        echo "Usage: dtmf calibrate"
+        echo "       dtmf detect"
+        echo "       dtmf detect verify"
+        exit 1
+        ;;
+esac
