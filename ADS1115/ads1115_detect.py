@@ -69,6 +69,9 @@ CALIBRATION = {
 # Tolerance in volts — how close a reading needs to be to match
 TOLERANCE = 0.008
 
+# Number of consecutive consistent readings to confirm a button press
+DEBOUNCE_COUNT = 3
+
 # =============================================================================
 # ADS1115 read
 # =============================================================================
@@ -100,7 +103,6 @@ def match_button(v_a0, v_a1):
 # =============================================================================
 def main():
     bus = smbus2.SMBus(BUS)
-    last_button = None
 
     print("=" * 50)
     print("  MH-48 Button Detector")
@@ -110,16 +112,27 @@ def main():
     print()
 
     try:
+        last_confirmed = None
+        candidate = None
+        candidate_count = 0
+
         while True:
             v_a0, v_a1 = read_both(bus)
             button = match_button(v_a0, v_a1)
 
-            if button != last_button:
-                if button and button != "IDLE":
-                    print(f"  PRESS:   [{button}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V")
-                elif last_button and last_button != "IDLE":
-                    print(f"  RELEASE: [{last_button}]")
-                last_button = button
+            if button == candidate:
+                candidate_count += 1
+            else:
+                candidate = button
+                candidate_count = 1
+
+            if candidate_count >= DEBOUNCE_COUNT:
+                if candidate != last_confirmed:
+                    if candidate and candidate != "IDLE":
+                        print(f"  PRESS:   [{candidate}]  A0={v_a0:.4f}V  A1={v_a1:.4f}V")
+                    elif last_confirmed and last_confirmed != "IDLE":
+                        print(f"  RELEASE: [{last_confirmed}]")
+                    last_confirmed = candidate
 
             time.sleep(0.02)
 
