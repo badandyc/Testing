@@ -39,6 +39,7 @@ COMP_DISABLE    = 0x0003
 SAMPLES_REQUIRED = 50
 STD_MULTIPLIER   = 3      # tolerance = max(std_a0, std_a1) * STD_MULTIPLIER
 MIN_TOLERANCE    = 0.005  # floor tolerance in volts
+PTT_MAX_TOLERANCE = 0.150 # PTT has high std so cap its tolerance
 
 # =============================================================================
 # ADS1115 read
@@ -94,6 +95,8 @@ def collect_button(bus, button):
     std_a0 = std(samples_a0, avg_a0)
     std_a1 = std(samples_a1, avg_a1)
     tolerance = max(max(std_a0, std_a1) * STD_MULTIPLIER, MIN_TOLERANCE)
+    if button == "PTT":
+        tolerance = min(tolerance, PTT_MAX_TOLERANCE)
 
     print(f"    Done.                                          ")
     print(f"    A0 avg={avg_a0:.4f}V  std={std_a0:.4f}V")
