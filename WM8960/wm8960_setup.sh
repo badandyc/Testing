@@ -285,9 +285,9 @@ amixer -c ${CARD} cset numid=49 on 2>/dev/null   # Left Input Mixer Boost
 amixer -c ${CARD} cset numid=50 on 2>/dev/null   # Right Input Mixer Boost
 amixer -c ${CARD} cset numid=45 off 2>/dev/null  # Left Boost Mixer LINPUT1 off
 amixer -c ${CARD} cset numid=44 on 2>/dev/null   # Left Boost Mixer LINPUT3 on
-amixer -c ${CARD} cset numid=4 7 2>/dev/null     # Left Input Boost LINPUT3 Volume max
+amixer -c ${CARD} cset numid=4 3 2>/dev/null     # Left Input Boost LINPUT3 Volume (3/7, AD828 preamp + 22k/2.2k divider)
 amixer -c ${CARD} cset numid=47 on 2>/dev/null   # Right Boost Mixer RINPUT3 on
-amixer -c ${CARD} cset numid=6 7 2>/dev/null     # Right Input Boost RINPUT3 Volume max
+amixer -c ${CARD} cset numid=6 3 2>/dev/null     # Right Input Boost RINPUT3 Volume (3/7, AD828 preamp + 22k/2.2k divider)
 
 # Capture volume - max gain
 amixer -c ${CARD} cset numid=1 63,63 2>/dev/null
