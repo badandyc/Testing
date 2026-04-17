@@ -36,7 +36,7 @@ REG_CONFIG      = 0x01
 
 OS_SINGLE       = 0x8000
 MUX_A0_GND      = 0x4000
-MUX_A1_GND      = 0x5000
+MUX_A1_GND      = 0x7000  # SW2 on A3 to maximize channel separation
 PGA_4096        = 0x0200
 MODE_SINGLE     = 0x0100
 DR_128SPS       = 0x0080
