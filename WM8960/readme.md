@@ -8,11 +8,11 @@ wm8960 play sound_check.wav \
 wm8960 record \
 wm8960 play
 
-Full Duplex Testing: \
-Node 1: \
-Already points to .185
+amixer -c 0 cset numid=4 1 \
+amixer -c 0 cset numid=6 1
 
-Node 2: \
-sudo sed -i 's/PEER_IP         = "192.168.8.185"/PEER_IP         = "192.168.8.229"/' /usr/local/bin/wm8960_ptt.py && sudo systemctl restart wm8960-ptt
+arecord -D hw:0,0 -f S32_LE -r 16000 -c 2 -d 5 /home/birddog/silent.wav && sox /home/birddog/silent.wav -n stat && wm8960 play /home/birddog/silent.wav
+
+arecord -D hw:0,0 -f S32_LE -r 16000 -c 2 -d 5 /home/birddog/talking.wav && sox /home/birddog/talking.wav -n stat && wm8960 play /home/birddog/talking.wav
 
 sudo systemctl stop wm8960-ptt wm8960-mixer
