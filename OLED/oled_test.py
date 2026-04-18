@@ -1,25 +1,48 @@
 #!/usr/bin/env python3
-# =============================================================================
-# oled_test.py
-# Basic OLED SSD1306 display test using luma.oled
-# I2C address: 0x3C, bus: 1
-# =============================================================================
-
+import RPi.GPIO as GPIO
+import time
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
 from luma.core.render import canvas
-from PIL import ImageFont
-import time
+
+UP   = 11
+DOWN = 9
+
+PAGES = ["Page 1", "Page 2", "Page 3"]
+current = 0
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(UP,   GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 serial = i2c(port=1, address=0x3C)
 device = ssd1306(serial)
 
-with canvas(device) as draw:
-    draw.rectangle(device.bounding_box, outline="white", fill="black")
-    draw.text((10, 20), "BirdDog", fill="white")
-    draw.text((10, 35), "OLED OK", fill="white")
+def show_page(n):
+    with canvas(device) as draw:
+        draw.rectangle(device.bounding_box, outline="white", fill="black")
+        draw.text((30, 25), PAGES[n], fill="white")
 
-print("Display initialized — check screen")
-time.sleep(5)
-device.cleanup()
-print("Done")
+show_page(current)
+print(f"Showing {PAGES[current]}")
+
+try:
+    while True:
+        if GPIO.input(UP) == GPIO.LOW:
+            current = (current + 1) % len(PAGES)
+            show_page(current)
+            print(f"Showing {PAGES[current]}")
+            time.sleep(0.3)
+
+        if GPIO.input(DOWN) == GPIO.LOW:
+            current = (current - 1) % len(PAGES)
+            show_page(current)
+            print(f"Showing {PAGES[current]}")
+            time.sleep(0.3)
+
+        time.sleep(0.05)
+
+except KeyboardInterrupt:
+    device.cleanup()
+    GPIO.cleanup()
+    print("\nDone.")
