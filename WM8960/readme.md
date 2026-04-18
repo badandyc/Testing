@@ -14,3 +14,5 @@ Already points to .185
 
 Node 2: \
 sudo sed -i 's/PEER_IP         = "192.168.8.185"/PEER_IP         = "192.168.8.229"/' /usr/local/bin/wm8960_ptt.py && sudo systemctl restart wm8960-ptt
+
+sudo systemctl stop wm8960-ptt wm8960-mixer
