@@ -21,9 +21,30 @@ PTT  = 7
 VOL_MIN = 1
 VOL_MAX = 10
 
-# Map 1-10 to amixer numid=11 range 0-127
+# Map 1-10 to audible amixer range 99-127
+AMIXER_MIN = 99
+AMIXER_MAX = 127
+
 def vol_to_amixer(vol):
-    return int((vol - 1) / 9 * 127)
+    return int(AMIXER_MIN + (vol - 1) / 9 * (AMIXER_MAX - AMIXER_MIN))
+
+def amixer_to_vol(amixer_val):
+    val = round((amixer_val - AMIXER_MIN) / (AMIXER_MAX - AMIXER_MIN) * 9 + 1)
+    return max(VOL_MIN, min(VOL_MAX, val))
+
+def get_current_volume():
+    try:
+        result = subprocess.run(
+            ["amixer", "-c", "0", "cget", "numid=11"],
+            capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            if "values=" in line and "min=" not in line:
+                val = int(line.strip().split("values=")[1].split(",")[0])
+                return amixer_to_vol(val)
+    except Exception:
+        pass
+    return 5
 
 def set_volume(vol):
     val = vol_to_amixer(vol)
@@ -57,7 +78,7 @@ GPIO.setup(PTT,  GPIO.IN, pull_up_down=GPIO.PUD_UP)
 serial = i2c(port=1, address=0x3C)
 device = ssd1306(serial)
 
-current_vol = 5
+current_vol = get_current_volume()
 show_volume(device, current_vol)
 print(f"Volume: {current_vol}")
 
