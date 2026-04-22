@@ -16,6 +16,7 @@ from luma.core.render import canvas
 UP   = 11
 DOWN = 9
 FST  = 0
+PTT  = 7
 
 VOL_MIN = 1
 VOL_MAX = 10
@@ -41,10 +42,17 @@ def show_volume(device, vol, confirmed=False):
         else:
             draw.text((10, 48), "FST to confirm", fill="white")
 
+def play_sound():
+    subprocess.run(
+        ["aplay", "-D", "plughw:0,0", "/home/birddog/sound_check.wav"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(UP,   GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(FST,  GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(PTT,  GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 serial = i2c(port=1, address=0x3C)
 device = ssd1306(serial)
@@ -73,6 +81,11 @@ try:
             print(f"Volume set: {current_vol} -> amixer {vol_to_amixer(current_vol)}")
             time.sleep(0.5)
             show_volume(device, current_vol)
+
+        if GPIO.input(PTT) == GPIO.LOW:
+            print("PTT — playing sound_check.wav")
+            play_sound()
+            time.sleep(0.3)
 
         time.sleep(0.05)
 
